@@ -1,0 +1,20 @@
+{
+  "name": "clawd-bot",
+  "private": true,
+  "version": "0.1.37",
+  "description": "Clawd Bot — local-first Solana-native chat app for a team of AI agents.",
+  "type": "module",
+  "main": "electron/main.mjs",
+  "desktopName": "com.clawdbot.app.desktop",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=26.5.0 <27"
+  },
+  "scripts": {
+    "dev": "vite --config vite.config.ts",
+    "dev:server": "node --experimental-strip-types server/harness-entry.ts",
+    "build": "tsc --project tsconfig.json && vite build --config vite.config.ts",
+    "build:server": "tsc --project tsconfig.harness.json",
+    "typecheck": "tsc --project tsconfig.json && tsc --project tsconfig.harness.json"
+  }
+}
