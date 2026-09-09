@@ -77,7 +77,7 @@ posixOnly("unattended turns keep asking", () => {
         instances: {
           // asks the client for permission mid-turn, which is exactly the
           // moment auto mode would normally answer on the human's behalf
-          grok: {
+          fixtureGrok: {
             driver: "grokAgent",
             environment: { FAKE_ACP_MODE: "permission" },
             config: { cli: FAKE_CLI, fullAuto: false },
@@ -137,7 +137,7 @@ posixOnly("unattended turns keep asking", () => {
         (
           await api("PATCH", `/api/bots/${bot.id}`, {
             autoApprove: true,
-            modelSelection: { instanceId: "grok", model: "fake-model" },
+            modelSelection: { instanceId: "fixtureGrok", model: "fake-model" },
           })
         ).status,
       ).toBe(200);
@@ -146,7 +146,7 @@ posixOnly("unattended turns keep asking", () => {
         name: "Nightly build",
         prompt: "Handle the incoming build event",
         botId: bot.id,
-        runOn: "maus",
+        runOn: "clawd",
       });
       expect(hook.status).toBe(201);
 
@@ -192,7 +192,7 @@ posixOnly("unattended turns keep asking", () => {
         name: "Handoff",
         prompt: "Ask the Teammate to handle this",
         botId: delegator.id,
-        runOn: "maus",
+        runOn: "clawd",
       });
       expect(hook.status).toBe(201);
 
@@ -235,7 +235,7 @@ posixOnly("unattended turns keep asking", () => {
       await api("PATCH", `/api/bots/${target.id}`, {
         name: "Answerer",
         autoApprove: true,
-        modelSelection: { instanceId: "grok", model: "fake-model" },
+        modelSelection: { instanceId: "fixtureGrok", model: "fake-model" },
       });
 
       const asker = (await api("POST", "/api/bots")).body.bot;
@@ -250,7 +250,7 @@ posixOnly("unattended turns keep asking", () => {
         name: "Ask a teammate",
         prompt: "Ask the Answerer what to do about this",
         botId: asker.id,
-        runOn: "maus",
+        runOn: "clawd",
       });
       expect(hook.status).toBe(201);
       const delivered = await fetch(hook.body.credential.url, {

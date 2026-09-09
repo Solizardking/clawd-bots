@@ -1,3 +1,5 @@
+> Historical upstream recipe: the referenced root Compose file and browser-pairing CLI are absent from standalone Clawd Bot, and this Dockerfile pulls an upstream image. Use the [Clawd documentation index](../../docs/README.md) and [adapted Podman recipe](../podman/README.md). The commands below are preserved for context and are not current Clawd setup instructions.
+
 # Local Docker Compose
 
 From the repository root, run `docker compose up -d --build`, then open

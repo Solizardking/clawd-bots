@@ -6,11 +6,15 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SKIP_NAMES = new Set([
   "LICENSE",
+  "NOTICE",
+  "NOTICE.md",
+  "PROVENANCE.md",
+  "README.md",
   "pnpm-lock.yaml",
   "tsconfig.tsbuildinfo.source",
   "rebrand-clawd-identity.mjs",
 ]);
-const SKIP_DIRS = new Set(["node_modules", "dist-ui", "dist-server", "dist-companion", "release"]);
+const SKIP_DIRS = new Set(["node_modules", "dist-ui", "dist-server", "dist-companion", "release", "work", "site", "research-archives"]);
 const TEXT_EXT = new Set([
   ".ts",
   ".tsx",

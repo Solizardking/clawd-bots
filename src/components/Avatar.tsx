@@ -1,9 +1,6 @@
-// Bot avatar — the Blob Studio "Cursor" mascot (CursorAvatar.tsx), wrapped
-// in the app's historical MausAvatar API so no call site changes: per-bot
-// color becomes a body gradient, the app's one-shot motion beats borrow the
-// face/state for a moment, and the eyes follow the pointer. The previous
-// hand-built Maus body + face engine (maus-engine/face/driver) is gone;
-// CursorAvatar owns morphing, blinking, drift, body motion and effects.
+// Clawd's generated pose atlases use the historical ClawdAvatar API.
+// One-shot motions temporarily select a matching pose. Explicit expression
+// previews retain the legacy Cursor renderer and its face controls.
 import {
   forwardRef,
   memo,
@@ -13,7 +10,7 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { MAUS_COLORS, type MausColor, type MausMotion, type MausState } from "@/lib/mascot";
+import { CLAWD_COLORS, type ClawdColor, type ClawdMotion, type ClawdState } from "@/lib/mascot";
 import {
   CursorAvatar,
   DEFAULT_SILHOUETTE,
@@ -21,6 +18,7 @@ import {
   type CursorSilhouette,
 } from "./CursorAvatar";
 import { botAvatarProfile, type BotAvatarCrop } from "../../shared/bot-avatar";
+import { ClawdSprite } from "./ClawdSprite";
 
 /**
  * The pack's baked-in silhouette was exported with the body fill hardcoded
@@ -56,7 +54,7 @@ const POINTER_GAZE = { forward: 1, authored: 0.25 };
  */
 interface MotionFaces
   extends Partial<
-    Record<Exclude<MausMotion, "none">, { state?: MausState; blink?: boolean; spin?: number }>
+    Record<Exclude<ClawdMotion, "none">, { state?: ClawdState; blink?: boolean; spin?: number }>
   > {}
 
 const MOTION_FACE: MotionFaces = {
@@ -96,22 +94,22 @@ function mix(hex: string, toward: string, t: number): string {
  * shadow), with the same light/dark spread as the pack's default green
  * ["#9FE6B5", "#3FAE6E", "#1C7A4C"].
  */
-const gradientFor = (color: MausColor): [string, string, string] => {
-  const fill = MAUS_COLORS[color] ?? MAUS_COLORS.green;
+const gradientFor = (color: ClawdColor): [string, string, string] => {
+  const fill = CLAWD_COLORS[color] ?? CLAWD_COLORS.green;
   return [mix(fill, "#ffffff", 0.55), fill, mix(fill, "#000000", 0.42)];
 };
 
-export type MausAvatarHandle = CursorAvatarHandle;
+export type ClawdAvatarHandle = CursorAvatarHandle;
 
-export type MausAvatarProps = {
-  color: MausColor;
+export type ClawdAvatarProps = {
+  color: ClawdColor;
   /** Named behaviour — drives the expression pool, its cadence and blinking. */
-  state?: MausState;
+  state?: ClawdState;
   /** Pin one of the 25 faces and stop the state's own drift. */
   expression?: number;
   size?: number;
   label?: string;
-  motion?: MausMotion;
+  motion?: ClawdMotion;
   motionKey?: number;
   /** Head turn in degrees. */
   turn?: number;
@@ -129,14 +127,14 @@ export type MausAvatarProps = {
   trackPointer?: boolean;
   /** Run the animation. Off renders the state's resting face. */
   animated?: boolean;
-  /** Legacy Maus face-placement knobs — accepted, ignored. */
+  /** Legacy Clawd face-placement knobs — accepted, ignored. */
   eyeSpacing?: number;
   faceX?: number;
   faceY?: number;
   faceScale?: number;
 };
 
-function MausAvatarComponent(
+function ClawdAvatarComponent(
   {
     color,
     state = "idle",
@@ -154,8 +152,8 @@ function MausAvatarComponent(
     forward = true,
     trackPointer = true,
     animated = true,
-  }: MausAvatarProps,
-  ref: React.Ref<MausAvatarHandle>,
+  }: ClawdAvatarProps,
+  ref: React.Ref<ClawdAvatarHandle>,
 ) {
   const inner = useRef<CursorAvatarHandle>(null);
   useImperativeHandle(ref, () => ({
@@ -165,7 +163,7 @@ function MausAvatarComponent(
   }));
 
   // A one-shot motion borrows the state for a moment, then hands it back.
-  const [motionState, setMotionState] = useState<MausState | null>(null);
+  const [motionState, setMotionState] = useState<ClawdState | null>(null);
   useEffect(() => {
     if (motion === "none" || !animated) return;
     const beat = MOTION_FACE[motion];
@@ -197,7 +195,7 @@ function MausAvatarComponent(
       onPointerMove={trackPointer && animated ? onPointerMove : undefined}
       onPointerLeave={trackPointer && animated ? onPointerLeave : undefined}
     >
-      <CursorAvatar
+      {expression === undefined ? <ClawdSprite state={motionState ?? state} size={size} label={label} /> : <CursorAvatar
         ref={inner}
         state={motionState ?? state}
         expression={expression}
@@ -213,18 +211,17 @@ function MausAvatarComponent(
         showMouth={showMouth}
         mouthStroke={mouthStroke}
         paused={!animated}
-      />
+      />}
     </span>
   );
 }
 
-export const MausAvatar = memo(forwardRef(MausAvatarComponent));
-export const ClawdAvatar = MausAvatar;
+export const ClawdAvatar = memo(forwardRef(ClawdAvatarComponent));
 
-export type BotAvatarProps = Omit<MausAvatarProps, "color"> & {
+export type BotAvatarProps = Omit<ClawdAvatarProps, "color"> & {
   bot: {
     name?: string;
-    color: MausColor;
+    color: ClawdColor;
     avatarUrl?: string | null;
     avatarCrop?: BotAvatarCrop;
   };
@@ -243,7 +240,7 @@ export function BotAvatar({ bot, size = 44, label, ...mascotProps }: BotAvatarPr
 
   if (profile.avatarCrop === "mascot" || !profile.avatarUrl || imageFailed) {
     return (
-      <MausAvatar
+      <ClawdAvatar
         {...mascotProps}
         color={bot.color}
         size={size}

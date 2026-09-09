@@ -1,61 +1,37 @@
-# Agent notifications and proactivity QA
+# Clawd Bot notification and proactivity QA
 
-Clawd Bot treats **proactivity as an explicit trigger**, not as a hidden
-heartbeat. A bot may continue within an active task through Auto mode, may be
-started by a Routine or Webhook, and may coordinate peers when its engine and
-profile allow that. This change does not add background polling that invents
-work or sends messages without one of those configured paths.
+Clawd Bot starts work through a user action or configured trigger: an active task's Auto mode, a Routine, a Webhook, or permitted peer coordination. This contract does not introduce an unconfigured heartbeat that invents work.
 
-## Notification policy
+## Expected notifications
 
-The harness is the single owner of interruption policy. A bot with
-notifications disabled remains quiet. Otherwise it may emit:
+The harness owns notification policy. A bot with notifications disabled remains quiet. Eligible notifications include an approval or question, a computer takeover request, a non-empty completion, and a failed routine.
 
-- **Needs approval** or **has a question** when the task is blocked on the user.
-- **Needs your hands** when a computer task requires a takeover.
-- **Finished** only when there is a non-empty result to summarize.
-- **Routine failed** when a scheduled or manual routine run cannot complete.
+Each notification must carry the bot ID and exact task thread ID. Clicking it selects both, including detached routine tasks. Desktop notifications are suppressed when the app window already has focus. iOS can handle live/replayed alerts while connected; a tunnel or VPN does not provide closed-app push delivery.
 
-Every notification carries both the bot ID and the exact task thread ID. A
-click must select that bot **and switch to that task**, including a routine's
-detached task; opening whichever task happens to be active is a failure.
+## Automated checks
 
-Desktop notifications are suppressed while the window already has focus. The
-iOS app can present live or replayed notifications while it is running and uses
-the same bot/task target when the notification is tapped. Waking a terminated
-iOS app still requires a future APNs relay; local network or VPN connectivity
-alone cannot provide closed-app delivery.
+| Contract | Coverage |
+| --- | --- |
+| Per-bot preference, empty results, bounded summaries | `server/notify.test.ts` |
+| Browser click target | `src/lib/notify.test.ts` |
+| Exact task navigation | `src/state/store.test.ts` |
+| Routine failure callback and receipt | `server/routines.test.ts` |
+| Single failure notification, no duplicate completion | `server/notification-wiring.test.ts` |
+| iOS target decoding | `ios/Tests/CompanionCoreTests/DecodingTests.swift` |
+| Phone API boundary | `companion/test/routes.test.ts` |
 
-## Automated coverage
+Run applicable suites from the Clawd Bot repository root with `npx vitest run <test-file>`. Native Swift checks run from `ios/` with `swift test`.
 
-| Contract | Test |
-|---|---|
-| Per-agent off means quiet; empty completions stay quiet; summaries are bounded | `server/notify.test.ts` |
-| Browser click returns the exact bot/task target | `src/lib/notify.test.ts` |
-| Store navigation selects the bot and switches the task | `src/state/store.test.ts` |
-| Routine failure receipt and callback occur once | `server/routines.test.ts` |
-| Real failed routine emits one `routine-failed` notification and no duplicate `done` | `server/notification-wiring.test.ts` |
-| iOS target parsing and detached-task decision | `ios/Tests/CompanionCoreTests/DecodingTests.swift` |
-| Paired-device route policy remains default-deny | `companion/test/routes.test.ts` |
+## Manual acceptance pass
 
-## Manual release pass
+Use two bots, with notifications enabled on one and disabled on the other:
 
-Run these with two bots, notifications enabled on one and disabled on the
-other:
+1. Background the desktop, complete a task, and confirm a single result notification opens that exact task.
+2. Trigger an approval and a question. Check their text and targets; no completion should appear while the request remains unresolved.
+3. Run a routine successfully, then produce a controlled failure. Confirm one failure alert and a receipt linked to its detached task.
+4. Repeat with notifications disabled. Chat and receipts should still update without a system alert.
+5. On iOS, tap a live or replayed notification for an inactive task and verify the server-side task switch and navigation.
+6. Exercise Auto, a Routine, and a Webhook separately. Identify the initiating action/configuration for each.
+7. Test duplicate/replayed events, reconnect, denied OS notification permission, and opening the target after another task becomes active.
 
-1. Background the desktop window. Complete a normal task and confirm one
-   result notification. Click it and verify the exact task opens.
-2. Trigger an approval and a question. Confirm their copy, click targets, and
-   that no duplicate completion notification appears before the task settles.
-3. Run a routine manually, then create a controlled failing run. Confirm the
-   receipt shows the detached task and the failure generates exactly one alert.
-4. Repeat the above with notifications disabled for that bot; the chat and run
-   receipt should update without a system alert.
-5. On iOS, tap a live/replayed notification for a non-active routine task.
-   Confirm the app switches the server-side active task before navigating.
-6. Exercise Auto mode, a Routine, and a Webhook independently. Verify each has
-   a visible initiating user/configured trigger and that no unconfigured
-   heartbeat starts work.
-
-Live provider, OS-permission, backgrounding, and APNs behavior cannot be proven
-by unit tests alone and remains part of the signed desktop/iPhone release pass.
+Record OS, app build, trigger, target IDs, and result without private message content. Unit tests do not prove OS permission prompts, suspended-app behavior, or a deployed APNs service. See [iOS companion](ios-companion.md).

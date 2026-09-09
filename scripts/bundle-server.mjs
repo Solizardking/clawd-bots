@@ -49,6 +49,7 @@ const ENTRY_POINTS = [
   "proxy-paths.ts",
   "local-computer.ts",
   "computer-proxy.ts",
+  "hosted-desktop-proxy.ts",
   "container-mcp.ts",
   "vps-container-mcp.ts",
   "permission-proxy.ts",
@@ -65,6 +66,9 @@ await build({
   platform: "node",
   target: "node20",
   format: "esm",
+  // Bundled CommonJS dependencies (including Solana web3) still require Node
+  // built-ins at runtime. ESM has no ambient require, even when fully bundled.
+  banner: { js: 'import { createRequire as __clawdCreateRequire } from "node:module"; const require = __clawdCreateRequire(import.meta.url);' },
   outbase: server,
   outdir: join(root, "dist-server"),
   // Written after tsc, replacing its output for these entry points.

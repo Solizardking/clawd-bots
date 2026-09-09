@@ -1,65 +1,35 @@
-# ClawdMobile privacy
+# Clawd Bot iOS companion: data handling
 
-ClawdMobile is a companion for an Clawd Bot service chosen and operated
-by the user. Local Wi-Fi and Tailscale connections work without an Clawd Bot
-account. A user may separately sign in on the desktop to enable the optional
-**Use your phone anywhere** HTTPS connection.
+This document describes the native iOS companion and the optional hosted connection in this source tree. It is a technical data-flow description. A distributed build and its service operator must verify their actual behavior and publish the applicable privacy disclosures before release.
 
-## Data handling
+## Phone and computer
 
-- The iOS app stores the selected computer address in iOS preferences and its
-  pairing token in the iOS Keychain.
-- The computer remains the source of bots, transcripts, approvals, credentials,
-  SQLite data, and screen images. Clawd Bot's hosted control plane does not
-  store a copy of that content.
-- On a local Wi-Fi or Tailscale connection, phone traffic goes directly to the
-  user's computer. Tailscale is a separate service with its own privacy terms.
-- If the desktop user enables optional hosted access, Clawd Bot stores the
-  account email address, an internal account ID, and computer installation
-  metadata: an opaque installation ID, opaque client ID, computer display name,
-  operating system, app version, status, and security timestamps. It also stores
-  opaque Cloudflare Tunnel/DNS resource IDs and redacted operational errors.
-  These records are used only for sign-in, ownership, abuse prevention,
-  provisioning, revocation, support, and reliability.
-- The optional HTTPS route is proxied by Cloudflare to an outbound-only
-  `cloudflared` connector on the user's computer. Messages, approvals,
-  transcript responses, and screen frames pass through Cloudflare in transit,
-  but are not written to the Clawd Bot control-plane database. Cloudflare may
-  process IP addresses and connection/request metadata as Clawd Bot's service
-  provider under Cloudflare's privacy terms.
-- Connector tokens stay in the desktop operating system's encrypted credential
-  store. Pairing and device tokens are not stored in the hosted control-plane
-  database.
-- The app contains no advertising or analytics SDKs, does not track users
-  across other companies' apps or websites, and does not sell personal data.
+The phone stores the selected computer address in preferences and its pairing credential in Keychain. The paired computer owns agent processes, provider credentials, transcripts, approvals, and stored images. Phone features can request this content through authenticated, allowlisted routes.
 
-Local HTTP connections should only be used on a network the user trusts.
-Tailscale and hosted HTTPS access are encrypted alternatives for untrusted or
-remote networks; neither makes a sleeping or powered-off computer reachable.
+Local connections go directly over the chosen trusted network. Tailscale is an optional third-party transport. The phone can also request speech synthesis from the computer; hosted synthesis sends the submitted text to the configured provider. Native dictation uses Apple's Speech framework and requests on-device recognition where supported. Do not infer a universal offline guarantee from the use of a native recognizer.
 
-## Retention, control, and deletion
+Avatar generation, connected-app authorization, and bot execution may use the providers configured by the computer owner. Those operations have provider-specific data flows beyond the phone transport itself.
 
-Unpairing removes the computer address and pairing token from the phone.
-Revoking the phone in Clawd Bot's Companion settings invalidates that device
-credential. Transcript deletion is controlled by the Clawd Bot installation
-that stores the transcript.
+## Optional hosted access
 
-Signing out of optional hosted access stops advertising the hosted address,
-revokes the computer installation credential, and schedules deletion of its
-Cloudflare Tunnel and DNS record. Account email, account identifiers,
-installation/security metadata, and operational records are retained while
-needed to operate and protect the service, and otherwise until the account
-holder asks for deletion. Some minimal records may be retained when required
-for security, fraud prevention, dispute resolution, or law.
+Desktop sign-in can enable an HTTPS route through Cloudflare to the user's computer. The control plane handles account email, account and installation identifiers, computer metadata, security timestamps, tunnel/DNS resource identifiers, and operational status. Its data model is separate from the local transcript database.
 
-To request a copy or deletion of hosted account data, open an
-[Clawd Bot Support](https://github.com/milind-soni/Clawd Bot/issues) request
-without posting an OTP, pairing code, device token, connector token, or other
-secret. The maintainer will provide a private way to verify control of the
-email address. Deleting hosted account data does not delete transcripts stored
-on the user's own computer.
+Conversation requests, approvals, transcript responses, and screen frames pass through the hosted proxy when that route is used. The control-plane design does not persist them as a cloud transcript store. Cloudflare processes traffic and connection metadata as part of providing transport; a deployed service's logging and retention configuration must be checked separately.
 
-## Support
+Connector credentials belong in the desktop encrypted credential store. Pairing credentials are managed by the phone and sidecar, rather than the hosted account database.
 
-Privacy questions can be opened at
-[Clawd Bot Support](https://github.com/milind-soni/Clawd Bot/issues).
+## Analytics scope
+
+The native iOS project has no third-party advertising or analytics SDK in its declared project dependencies. That statement does not describe the desktop/web renderer: it includes PostHog and an analytics preference in [its analytics module](../src/lib/analytics.ts). Review the actual submitted target and enabled services when completing store disclosures.
+
+## Control and deletion
+
+Unpairing on the phone removes its saved connection. Revoking the device on the computer invalidates its access. Transcript and attachment deletion is controlled by the installation that owns those files; disconnecting the phone does not delete them.
+
+Disabling hosted access must revoke the hosted installation connection and clean up its tunnel/DNS resources according to the deployed service. Hosted account deletion, log retention, and any required retention exceptions are operator responsibilities; this source document does not establish a production retention period or support response guarantee.
+
+Use the support contact supplied with your distribution for private data requests. For source questions, use the [repository issue tracker](https://github.com/Solizardking/clawd-bots/issues) without posting pairing codes, tokens, keys, or private transcripts.
+
+## Release review
+
+Compare the submitted binary, [privacy manifest](../ios/App/PrivacyInfo.xcprivacy), companion allowlist, configured providers, and production service before publishing privacy answers. Revisit this document when adding analytics, crash reporting, push delivery, or server-side content retention.

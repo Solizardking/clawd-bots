@@ -1,3 +1,4 @@
+import type { ResearchData } from '../shared/research.ts';
 // Canonical harness contracts — ported from upstream
 // (apps/server/src/provider/ProviderDriver.ts, Services/ProviderAdapter.ts,
 // packages/contracts/src/{provider,providerInstance,providerRuntime}.ts),
@@ -9,7 +10,7 @@ export type DriverKind = string;
 export type InstanceId = string;
 export type ThreadId = string;
 export type TurnId = string;
-export type CloudBackend = "box" | "vps";
+export type CloudBackend = "box" | "vps" | "e2b";
 
 export type ProviderErrorCode =
   | "missing_cli"
@@ -108,7 +109,7 @@ export type RuntimeEvent = RuntimeEventBase &
       }
     | { type: "item.started"; itemType: "tool" | "reasoning"; title?: string }
     | { type: "item.updated"; itemType: "tool" | "reasoning"; tokens?: number | null }
-    | { type: "item.completed"; itemType: "tool"; ok: boolean }
+    | { type: "item.completed"; itemType: "tool"; ok: boolean; research?: ResearchData }
     | { type: "item.completed"; itemType: "assistant_text"; text: string }
     | { type: "content.delta"; streamKind: "assistant_text" | "reasoning_text"; delta: string }
     | {

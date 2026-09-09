@@ -1,12 +1,11 @@
 # Self-host the full stack with rootless Podman
 
-Run the OpenMausBot server, Caddy, and per-bot Linux desktops with one Podman
+Run the Clawd Bot server, Caddy, and per-bot Linux desktops with one Podman
 engine. Docker Engine, Docker Desktop, and Docker Compose are not required;
-`podman-compose` provides the Compose commands. The existing
-[`deploy/docker-compose.yml`](../docker-compose.yml) remains an independent option.
+`podman-compose` provides the Compose commands. This recipe builds the standalone npm workspace from source.
 
 ```text
-Browser -> loopback Caddy :8080 -> OpenMausBot :8799
+Browser -> loopback Caddy :8080 -> Clawd Bot :8799
                                     |
                              rootless Podman socket
                                     |
@@ -57,8 +56,9 @@ PODMAN_COMPOSE_PROVIDER=podman-compose podman compose --env-file .env -f compose
 This recipe targets Podman 5.8.3 / podman-compose 1.6.0 and Linux x86_64. The
 remote client is checksum-pinned; the renderer and server both build from your
 checkout. Engine installation is opt-in through `ENGINES`; pin package versions
-there when reproducibility is required. The live acceptance environment is a
-Windows WSL2 machine. Native Linux, SELinux-enforcing systems, ARM64, macOS, and non-systemd
+there when reproducibility is required. The build uses `npm ci`,
+`npm run build:server`, and `npm run build:ui`; it serves `dist-ui`. The inherited recipe targeted Windows WSL2; this adapted checkout still needs
+a fresh container acceptance run on that platform. Native Linux, SELinux-enforcing systems, ARM64, macOS, and non-systemd
 hosts need separate validation; the Containerfile explicitly rejects non-x86_64.
 SELinux-enforcing systems need an appropriate socket/bind policy, not blanket label
 disabling. Reboot persistence on Linux additionally needs the user's linger and
@@ -76,7 +76,7 @@ and set the maximum number of desktops. Give each bot **Local VM** as its comput
 then create its desktop. The first image preparation needs a large download.
 Each desktop has the existing 4 GiB / 2 CPU limits; allow capacity for the server
 and build as well as all concurrent desktops. See the
-[Local VM guide](../../apps/docs/content/docs/computers/local-vm.mdx).
+[computer integration guide](../../docs/computer-use-integration.md).
 
 The server's `maus` user (1001) and each desktop's `cua` user (1000) map to the same
 rootless host user through separate `keep-id` namespaces. The server mounts the
@@ -89,14 +89,14 @@ existing data.
 
 ## Access and trust boundary
 
-Caddy listens on loopback only. To use Tailscale Serve, route the tailnet HTTPS
-endpoint to `http://127.0.0.1:8080`, set `OMB_PUBLIC_URL` to that HTTPS URL and
-`OMB_HTTPS_HOST` to its hostname, then recreate the services with `up -d`.
-Mint a pairing code with `maus.ps1 exec omb node dist-server/openmausbot.js pair`.
-The proxy forwards the client address and scheme so the server's pairing checks
-remain in force. Do not publish the server, webhook listener, or Podman socket
-directly. For public-domain HTTPS, use the existing Docker deployment or design
-and verify an authenticated edge for this recipe.
+Caddy listens on loopback only. Open `http://localhost:8080` on the engine
+host. On a remote Linux engine, use an SSH local forward to that loopback port.
+The Clawd harness accepts loopback Host and Origin values and does not contain
+the inherited `dist-server/openmausbot.js pair` CLI or browser-login flow.
+Do not expose this proxy with Tailscale Serve or public-domain HTTPS: those
+remote browser requests are not a supported authenticated harness transport.
+For phone access, use the [companion's authenticated pairing flow](../../docs/ios-companion.md).
+Do not publish the harness, webhook listener, or Podman socket directly.
 
 The app's socket grants control of **all containers owned by that rootless user**.
 Use a dedicated machine/user. This is not complete isolation of each agent CLI:
@@ -117,4 +117,10 @@ manual noVNC access from another device needs a separate authenticated relay.
 - Docker deployments keep their existing commands, volumes, and files. This
   recipe does not migrate them. For side-by-side operation, use separate data
   roots and different app/webhook/proxy ports; never share a live data directory.
-- For acceptance checks, follow the [isolated verification recipe](../../docs/verification/podman-self-hosting.md).
+- For acceptance checks, run `podman compose --env-file .env -f compose.yaml config --quiet`,
+  build and start the stack, then check `http://localhost:8080/api/health` for
+  `app: "clawdbot"` and `static: true`. Open the UI, run a configured agent,
+  and verify a per-bot desktop before calling the deployment ready.
+- Existing `OMB_DATA_ROOT/.openmausbot` volumes retain that compatibility path;
+  setup does not migrate or delete an existing workspace. `OMB_` configuration
+  names and the `omb` service/user plumbing remain supported compatibility names.

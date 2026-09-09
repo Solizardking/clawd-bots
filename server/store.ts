@@ -1,3 +1,4 @@
+import type { ResearchData } from '../shared/research.ts';
 // Bot + thread persistence. bots.json holds bot records (including the
 // thread→instance binding and per-instance resume cursors — upstream's
 // ProviderSessionDirectory, recipe step 6: persist the binding from day
@@ -15,7 +16,7 @@ import { pickBotName } from "./names.ts";
 import { redactSecretsInText } from "./redact.ts";
 import { botAvatarProfile, type BotAvatarCrop } from "../shared/bot-avatar.ts";
 
-export type MausColor =
+export type ClawdColor =
   | "green"
   | "blue"
   | "red"
@@ -32,7 +33,7 @@ export type MausColor =
  * string rather than a union: bots saved under the app's earlier ten-face
  * vocabulary still carry those names, and the client resolves both on read.
  */
-export type MausExpression = string;
+export type ClawdExpression = string;
 
 export interface OptionCardData {
   title: string;
@@ -81,6 +82,7 @@ export interface SecretRequestCardData {
 }
 
 export interface Message {
+  research?: ResearchData;
   id: string;
   role: "bot" | "user";
   kind: "text" | "options" | "activity" | "screen" | "connector" | "secret";
@@ -284,8 +286,8 @@ export interface BotRecord {
   title: string;
   description: string;
   notifications: boolean;
-  color: MausColor;
-  mascotExpression?: MausExpression | null;
+  color: ClawdColor;
+  mascotExpression?: ClawdExpression | null;
   /** App-owned attachment served as this bot's custom profile image. */
   avatarUrl?: string;
   /** Mascot, or the crop applied to avatarUrl. */
@@ -378,7 +380,7 @@ const BOTS_FILE = join(DATA_DIR, "bots.json");
 const GROUPS_FILE = join(DATA_DIR, "groups.json");
 const messagesFile = (threadId: string) => join(DATA_DIR, `messages-${threadId}.json`);
 
-const COLORS: MausColor[] = [
+const COLORS: ClawdColor[] = [
   "green",
   "blue",
   "red",
@@ -510,7 +512,7 @@ export class Store {
       if (b.busy || (b.activity !== undefined && b.activity !== "idle")) botsMigrated = true;
       b.busy = false;
       b.activity = "idle";
-      if (b.cloudBackend !== undefined && b.cloudBackend !== "box" && b.cloudBackend !== "vps") {
+      if (b.cloudBackend !== undefined && b.cloudBackend !== "box" && b.cloudBackend !== "vps" && b.cloudBackend !== "e2b") {
         delete b.cloudBackend;
         botsMigrated = true;
       }

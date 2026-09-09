@@ -19,7 +19,9 @@
     "server/solana/solana-service.ts",
     "server/solana/solana-routed-tools.ts",
     "server/solana/local-wallets.ts",
-    "shared/product.ts"
+    "server/solana/pump-tape.ts",
+    "shared/product.ts",
+    "shared/connectors.ts"
   ],
   "exclude": ["**/*.test.ts"]
 }

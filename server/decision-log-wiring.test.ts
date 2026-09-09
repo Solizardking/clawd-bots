@@ -105,7 +105,7 @@ async function makePermissionBot(patch: Record<string, unknown>) {
   const bot = created.body.bot;
   const patched = await api("PATCH", `/api/bots/${bot.id}`, {
     ...patch,
-    modelSelection: { instanceId: "grok", model: "fake-model" },
+    modelSelection: { instanceId: "fixtureGrok", model: "fake-model" },
   });
   expect(patched.status).toBe(200);
   return patched.body.bot ?? bot;
@@ -120,7 +120,7 @@ posixOnly("authorization decisions are logged", () => {
       join(home, ".clawdbot", "config.json"),
       JSON.stringify({
         instances: {
-          grok: {
+          fixtureGrok: {
             driver: "grokAgent",
             environment: { FAKE_ACP_MODE: "permission" },
             config: { cli: FAKE_CLI, fullAuto: false },
@@ -236,7 +236,7 @@ posixOnly("authorization decisions are logged", () => {
         name: "Nightly build",
         prompt: "Handle the incoming build event",
         botId: bot.id,
-        runOn: "maus",
+        runOn: "clawd",
       });
       expect(hook.status).toBe(201);
       const delivered = await fetch(hook.body.credential.url, {

@@ -67,7 +67,9 @@ export interface SolanaServiceDeps {
   writeRegistry: (value: unknown) => Promise<void>;
   loadServerSdk: () => Promise<{ ServerSDK: new (options: { organizationId: string; apiPrivateKey: string; appId: string }) => PhantomServerSdk }>;
   heliusRpcBase?: string | undefined;
+  envRpcUrl?: string | undefined;
   envHeliusKey?: string | undefined;
+  hostedAccess?: () => { origin: string; token: string } | null;
   fetchImpl?: FetchLike | undefined;
 }
 
@@ -108,16 +110,21 @@ export function createSolanaService(deps: SolanaServiceDeps) {
   };
 
   const heliusRpc = async <T = unknown>(method: string, params: unknown): Promise<T> => {
-    const key = await heliusKey();
+    const hosted = deps.hostedAccess?.();
+    const rpcUrl = firstSecret(deps.envRpcUrl);
+    const key = hosted || rpcUrl ? null : await heliusKey();
+    const endpoint = hosted ? `${hosted.origin}${method === "getBalance" ? "/solana/rpc" : "/helius/rpc"}` : rpcUrl ?? `${heliusBase}/?api-key=${encodeURIComponent(key!)}`;
     let response: Response;
     try {
-      response = await fetchImpl(`${heliusBase}/?api-key=${encodeURIComponent(key)}`, {
+      response = await fetchImpl(endpoint, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        redirect: "error",
+        signal: AbortSignal.timeout(30_000),
+        headers: { "content-type": "application/json", ...(hosted ? { authorization: `Bearer ${hosted.token}` } : {}) },
         body: JSON.stringify({ jsonrpc: "2.0", id: "clawdbot-solana", method, params }),
       });
-    } catch (error) {
-      throw new Error(`Helius request failed: ${error instanceof Error ? error.message : String(error)}`);
+    } catch {
+      throw new Error("Solana RPC request failed");
     }
     const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
     if (!response.ok) {
@@ -150,7 +157,7 @@ export function createSolanaService(deps: SolanaServiceDeps) {
       );
       return {
         phantomConfigured: missingPhantom.length === 0,
-        heliusConfigured: helius != null || firstSecret(deps.envHeliusKey) != null,
+        heliusConfigured: firstSecret(deps.envRpcUrl) != null || Boolean(deps.hostedAccess?.()) || helius != null || firstSecret(deps.envHeliusKey) != null,
         missingPhantom,
         walletCount: readWalletRegistry(registry).length,
       };

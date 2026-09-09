@@ -85,7 +85,7 @@ const appConfigSchema = z.object({
   openaiCompat: z.object({ key: optionalText, url: optionalText }).optional(),
   /** Project key used for Sessions, catalog and agent tools. userId/sessionId
    * are non-secret local identifiers used to reuse one Composio Session. */
-  composio: z.object({ apiKey: optionalText, userId: optionalText, sessionId: optionalText }).optional(),
+  composio: z.object({ hostedGateway: z.boolean().optional(), apiKey: optionalText, userId: optionalText, sessionId: optionalText }).optional(),
   box: z.object({ token: optionalText }).optional(),
   vps: vpsConfigSchema.optional(),
   /** Optional OpenCode key; persisted write-only and passed only to its child. */
@@ -110,7 +110,7 @@ const jsonObjectSchema = z.record(z.string(), z.json());
 export interface AppConfig {
   xai?: { key?: string; url?: string };
   openaiCompat?: { key?: string; url?: string };
-  composio?: { apiKey?: string; userId?: string; sessionId?: string };
+  composio?: { hostedGateway?: boolean; apiKey?: string; userId?: string; sessionId?: string };
   box?: { token?: string };
   /** A named host from the user's SSH config. Authentication stays with SSH. */
   vps?: { sshAlias?: string };

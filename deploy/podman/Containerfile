@@ -2,14 +2,12 @@
 # Build both server and renderer from this checkout, never mix release artifacts.
 FROM node:24.15.0-bookworm-slim AS build
 WORKDIR /src
-RUN npm install -g pnpm@10.33.0
 ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY apps/docs/package.json ./apps/docs/package.json
-COPY cloudflare/control-plane/package.json ./cloudflare/control-plane/package.json
-RUN pnpm install --frozen-lockfile
+COPY package.json package-lock.json ./
+COPY source/package.json ./source/package.json
+RUN npm ci
 COPY . .
-RUN pnpm build:server && pnpm exec vite build
+RUN npm run build:server && npm run build:ui
 
 FROM node:24.15.0-bookworm-slim
 RUN test "$(uname -m)" = x86_64 \
@@ -26,12 +24,12 @@ RUN curl -fsSL https://github.com/podman-container-tools/podman/releases/downloa
     && rm /tmp/podman.tgz /tmp/bin/podman-remote-static-linux_amd64
 WORKDIR /app
 COPY --from=build --chown=maus:maus /src/dist-server ./dist-server
-COPY --from=build --chown=maus:maus /src/dist ./dist
+COPY --from=build --chown=maus:maus /src/dist-ui ./dist-ui
 ARG ENGINES=""
 RUN if [ -n "$ENGINES" ]; then npm install -g $ENGINES; fi
 ENV HOME=/data \
-    OMB_DATA_DIR=/data/.openmausbot \
-    OMB_STATIC_DIR=/app/dist \
+    OMB_DATA_DIR=/data/.clawdbot \
+    OMB_STATIC_DIR=/app/dist-ui \
     OMB_PORT=8799 \
     OMB_WEBHOOK_PORT=8800 \
     NODE_ENV=production

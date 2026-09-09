@@ -117,7 +117,9 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
         // Keep the last usable catalog when a local provider is down.
       }
     };
-    await refreshModels();
+    // The packaged UI can open while optional catalogs are discovered.
+    if (process.env.OMB_STATIC_DIR) void refreshModels();
+    else await refreshModels();
     const listeners = new Set<RuntimeEventListener>();
     interface Turn {
       stop: () => void;

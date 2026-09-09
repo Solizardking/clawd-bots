@@ -152,7 +152,14 @@ export function setManagedBrokerAccess(access: unknown): void {
   managedBrokerAccess = { url: normalizeManagedBrokerUrl(parsed.url), token: parsed.token };
 }
 
-function brokerAccess(): { url: string; token: string } | null {
+function brokerAccess(cfg: AppConfig): { url: string; token: string } | null {
+  if (cfg.composio?.hostedGateway) {
+    const url = new URL(cfg.openaiCompat?.url ?? "");
+    if (url.protocol !== "https:" || !/^\/(openrouter|novita|xai|nvidia)\/v1\/?$/.test(url.pathname) || url.username || url.password || url.search || url.hash) throw new Error("Invalid hosted gateway URL");
+    const token = cfg.openaiCompat?.key ?? "";
+    if (!/^[A-Za-z0-9_-]{32,128}$/.test(token)) throw new Error("Hosted gateway access is missing");
+    return { url: url.origin + "/composio", token };
+  }
   if (managedBrokerAccess !== undefined) return managedBrokerAccess;
   const url = process.env.OMB_COMPOSIO_BROKER_URL?.trim();
   const token = process.env.OMB_COMPOSIO_BROKER_TOKEN?.trim();
@@ -162,7 +169,7 @@ function brokerAccess(): { url: string; token: string } | null {
 }
 
 export function connectionMode(cfg: AppConfig): "managed" | "self-hosted" | "unavailable" {
-  if (brokerAccess()) return "managed";
+  if (brokerAccess(cfg)) return "managed";
   return cfg.composio?.apiKey ? "self-hosted" : "unavailable";
 }
 
@@ -184,8 +191,8 @@ export function connectorAvailability(
   return storeState === "unavailable" ? "unreadable" : "unconfigured";
 }
 
-async function brokerRequest(path: string, init?: RequestInit): Promise<Response> {
-  const broker = brokerAccess();
+async function brokerRequest(cfg: AppConfig, path: string, init?: RequestInit): Promise<Response> {
+  const broker = brokerAccess(cfg);
   if (!broker) throw new Error("The connected-apps service is unavailable");
   const headers = new Headers(init?.headers);
   headers.set("authorization", `Bearer ${broker.token}`);
@@ -373,7 +380,7 @@ export async function relayMcp(
   payload: JsonValue,
   transportSessionId?: string,
 ): Promise<{ status: number; bytes: Uint8Array; contentType: string; transportSessionId?: string }> {
-  const broker = brokerAccess();
+  const broker = brokerAccess(cfg);
   let url: string;
   const headers = new Headers({
     "content-type": "application/json",
@@ -545,8 +552,8 @@ function allServiceStates(
  * on marketplace ordering or catalog pagination.
  */
 export async function connectedServices(cfg: AppConfig): Promise<Record<string, ConnectorServiceState>> {
-  if (brokerAccess()) {
-    const response = await brokerRequest("/v1/connectors/connected");
+  if (brokerAccess(cfg)) {
+    const response = await brokerRequest(cfg, "/v1/connectors/connected");
     if (!response.ok) await throwBrokerError(response, `Connected apps: HTTP ${response.status}`);
     const body = connectorServicesResponseSchema.parse(await response.json());
     return Object.fromEntries(
@@ -573,8 +580,8 @@ export async function connectedServices(cfg: AppConfig): Promise<Record<string, 
 }
 
 export async function connectionStatus(cfg: AppConfig, slugs: string[]) {
-  if (brokerAccess() || !cfg.composio?.apiKey) {
-    const response = await brokerRequest(`/v1/connectors?${new URLSearchParams({ services: slugs.join(",") })}`);
+  if (brokerAccess(cfg) || !cfg.composio?.apiKey) {
+    const response = await brokerRequest(cfg, `/v1/connectors?${new URLSearchParams({ services: slugs.join(",") })}`);
     if (!response.ok) await throwBrokerError(response, `Connected apps: HTTP ${response.status}`);
     const body = connectorServicesResponseSchema.parse(await response.json());
     return body.services ?? {};
@@ -629,8 +636,8 @@ export async function connectionStatus(cfg: AppConfig, slugs: string[]) {
 
 /** Backward-compatible service disconnect: removes the Session-selected account. */
 export async function removeService(cfg: AppConfig, slug: string) {
-  if (brokerAccess() || !cfg.composio?.apiKey) {
-    const response = await brokerRequest(`/v1/connectors/${encodeURIComponent(slug)}`, { method: "DELETE" });
+  if (brokerAccess(cfg) || !cfg.composio?.apiKey) {
+    const response = await brokerRequest(cfg, `/v1/connectors/${encodeURIComponent(slug)}`, { method: "DELETE" });
     if (!response.ok) await throwBrokerError(response, `Connected apps: HTTP ${response.status}`);
     return removalResponseSchema.parse(await response.json());
   }
@@ -655,8 +662,8 @@ export async function removeService(cfg: AppConfig, slug: string) {
 /** Disconnect exactly one account after proving it belongs to this user/toolkit. */
 export async function removeAccount(cfg: AppConfig, slug: string, accountId: string) {
   if (!validAccountId(accountId)) throw inputError("Invalid connected-account ID");
-  if (brokerAccess() || !cfg.composio?.apiKey) {
-    const response = await brokerRequest(
+  if (brokerAccess(cfg) || !cfg.composio?.apiKey) {
+    const response = await brokerRequest(cfg, 
       `/v1/connectors/${encodeURIComponent(slug)}/accounts/${encodeURIComponent(accountId)}`,
       { method: "DELETE" },
     );
@@ -682,10 +689,10 @@ export async function removeAccount(cfg: AppConfig, slug: string, accountId: str
 /** Mint a browser auth link for one service. Returns { url } or throws. */
 export async function authorizeService(cfg: AppConfig, slug: string, requestedAlias?: string | null) {
   const alias = normalizeAccountAlias(requestedAlias);
-  if (brokerAccess() || !cfg.composio?.apiKey) {
+  if (brokerAccess(cfg) || !cfg.composio?.apiKey) {
     const request: RequestInit = { method: "POST" };
     if (alias) request.body = JSON.stringify({ alias });
-    const response = await brokerRequest(`/v1/connectors/${encodeURIComponent(slug)}/authorize`, request);
+    const response = await brokerRequest(cfg, `/v1/connectors/${encodeURIComponent(slug)}/authorize`, request);
     if (!response.ok) await throwBrokerError(response, `Connected apps: HTTP ${response.status}`);
     const body = authUrlResponseSchema.parse(await response.json());
     return { url: trustedAuthUrl(body.url, slug) };
@@ -773,15 +780,15 @@ export async function listToolkits(cfg: AppConfig): Promise<{ cards: ToolkitCard
   if (toolkitCache && Date.now() - toolkitCache.at < 10 * 60_000) {
     return { cards: toolkitCache.cards, source: "api" };
   }
-  const backendKey = brokerAccess() ? undefined : cfg.composio?.apiKey;
-  if (backendKey || brokerAccess()) {
+  const backendKey = brokerAccess(cfg) ? undefined : cfg.composio?.apiKey;
+  if (backendKey || brokerAccess(cfg)) {
     try {
       const res = backendKey
         ? await fetch(`${toolkitBase()}/toolkits?limit=500&sort_by=usage`, {
             headers: { "x-api-key": backendKey },
             signal: AbortSignal.timeout(15_000),
           })
-        : await brokerRequest("/v1/catalog", { signal: AbortSignal.timeout(15_000) });
+        : await brokerRequest(cfg, "/v1/catalog", { signal: AbortSignal.timeout(15_000) });
       if (res.ok) {
         const json: any = await res.json();
         const items = json.items ?? json.data ?? [];

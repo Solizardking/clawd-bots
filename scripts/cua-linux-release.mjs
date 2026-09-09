@@ -365,10 +365,15 @@ async function validateStagedRuntime(stageDirectory, { licenseDirectory }) {
     const actual = await readFile(path.join(licensesDirectory, name));
     if (!actual.equals(expected)) throw new Error(`staged CUA license resource mismatch: ${name}`);
   }
-  if ((await binaryVersion(path.join(stageDirectory, "cua-driver"))) !== `cua-driver ${LINUX_CUA_RELEASE.version}`) {
-    throw new Error(`staged CUA Driver does not report version ${LINUX_CUA_RELEASE.version}`);
+  // Cross-packaging still checks every pinned byte, mode, and license above.
+  // Execute the ELF only on its native host; native Linux CI repeats staging
+  // and validates the executable's version and MCP manifest before packaging.
+  if (process.platform === 'linux' && process.arch === 'x64') {
+    if ((await binaryVersion(path.join(stageDirectory, "cua-driver"))) !== `cua-driver ${LINUX_CUA_RELEASE.version}`) {
+      throw new Error(`staged CUA Driver does not report version ${LINUX_CUA_RELEASE.version}`);
+    }
+    await validateBinaryManifest(path.join(stageDirectory, "cua-driver"));
   }
-  await validateBinaryManifest(path.join(stageDirectory, "cua-driver"));
   return manifest;
 }
 

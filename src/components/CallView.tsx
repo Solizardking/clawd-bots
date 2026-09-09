@@ -25,7 +25,7 @@ import { currentCall, deferCallCleanup, endCall, startCall, useOnCall } from "@/
 import { speaker } from "@/lib/tts";
 import { useSpeech } from "@/lib/tts/useSpeech";
 import { usePushToTalk } from "@/lib/push-to-talk";
-import { MausAvatar } from "./Avatar";
+import { ClawdAvatar } from "./Avatar";
 import { pendingApprovals } from "./PendingApproval";
 import { cn } from "@/lib/cn";
 import { track } from "@/lib/analytics";
@@ -488,7 +488,7 @@ function Call({ bot }: { bot: Bot }) {
         <X size={18} />
       </button>
 
-      <MausAvatar color={bot.color} state={mascotState} size={220} animated trackPointer />
+      <ClawdAvatar color={bot.color} state={mascotState} size={220} animated trackPointer />
 
       <div className="flex flex-col items-center gap-1.5 text-center">
         <div className="text-[20px] font-medium text-ink">{bot.name}</div>

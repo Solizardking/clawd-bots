@@ -10,9 +10,9 @@ import {
 const frame: NotifyFrame = {
   kind: "done",
   botId: "bot-1",
-  botName: "Maus",
+  botName: "Clawd",
   threadId: "thread-1",
-  title: "Maus finished",
+  title: "Clawd finished",
   body: "All done",
 };
 

@@ -9,3 +9,7 @@ Version 2.0, with the consent of all contributors whose copyright was
 incorporated before the transition.
 
 See LICENSE for the full Apache License 2.0 text.
+
+Imported source/ and integration tooling retain the separate reconstruction notice
+and provenance under docs/reconstruction/. The Apache-2.0 application license
+does not grant rights over third-party reconstruction material.

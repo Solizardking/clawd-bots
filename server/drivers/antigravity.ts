@@ -326,7 +326,9 @@ export const AntigravityDriver: ProviderDriver<AntigravityConfig> = {
         // Keep the last usable catalog when settings.json is unreadable.
       }
     };
-    await refreshModels();
+    // The packaged UI can open while optional catalogs are discovered.
+    if (process.env.OMB_STATIC_DIR) void refreshModels();
+    else await refreshModels();
     const listeners = new Set<RuntimeEventListener>();
     // one active turn per thread; a second send while busy is a caller bug
     const active = new Map<string, { stop: () => void; turnId: string }>();

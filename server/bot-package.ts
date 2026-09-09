@@ -1,11 +1,12 @@
 import { z } from "zod";
+import { normalizeLegacyFormat } from '../shared/legacy-format.ts';
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 import { schemaIssue, type JsonValue } from "./schema.ts";
-import type { MausColor } from "./store.ts";
+import type { ClawdColor } from "./store.ts";
 import type { TeamManifestMember } from "./team-manifest.ts";
 
-export const BOT_PACKAGE_FORMAT = "openmaus.package" as const;
+export const BOT_PACKAGE_FORMAT = "clawd.package" as const;
 export const BOT_PACKAGE_VERSION = 1 as const;
 export const BOTMRR_MARKDOWN_VERSION = 1 as const;
 
@@ -20,7 +21,7 @@ const COLORS = [
   "yellow",
   "teal",
   "coral",
-] as const satisfies readonly MausColor[];
+] as const satisfies readonly ClawdColor[];
 
 const requiredText = (max: number) =>
   z.string({ error: "must be text" }).trim().min(1, { message: "is required" }).max(max, { message: "is too long" });
@@ -37,7 +38,7 @@ const key = requiredText(64).regex(/^[a-z0-9][a-z0-9_-]*$/, {
 });
 
 const packageSchema = z.object({
-  format: z.literal(BOT_PACKAGE_FORMAT, { error: "This is not an Clawd package" }),
+  format: z.literal(BOT_PACKAGE_FORMAT, { error: "This is not a Clawd package" }),
   version: z.literal(BOT_PACKAGE_VERSION, { error: "Package version is not supported" }),
   package: z.object({
     id: requiredText(80).regex(/^[a-z0-9][a-z0-9-]*$/, { message: "must be a lowercase slug" }),
@@ -90,7 +91,7 @@ const packageSchema = z.object({
       name: requiredText(80),
       agent: key,
       prompt: requiredText(20_000),
-      runOn: z.enum(["maus", "cloud"]),
+      runOn: z.preprocess((value) => value === "maus" ? "clawd" : value, z.enum(["clawd", "cloud"])),
       schedule: z.discriminatedUnion("type", [
         z.object({ type: z.literal("once"), at: z.number().int() }),
         z.object({
@@ -124,6 +125,7 @@ export type BotPackagePlaybook = NonNullable<BotPackageDefinition["playbooks"]>[
 
 export function isBotPackage(value: unknown): boolean {
   if (typeof value === "string") return /^---\r?\n[\s\S]*?\bbotmrr:\s*1\b/m.test(value);
+  value = normalizeLegacyFormat(value);
   return Boolean(value) && typeof value === "object" && !Array.isArray(value) &&
     (value as { format?: unknown }).format === BOT_PACKAGE_FORMAT;
 }
@@ -158,7 +160,7 @@ function markdownDocument(markdown: string): ParsedBotPackage {
  * runtime state therefore cannot ride through the package boundary. */
 export function parseBotPackage(value: JsonValue | ParsedBotPackage): ParsedBotPackage {
   const source = typeof value === "string" ? markdownDocument(value) : value;
-  const parsed = packageSchema.safeParse(source);
+  const parsed = packageSchema.safeParse(normalizeLegacyFormat(source));
   if (!parsed.success) throw new Error(schemaIssue(parsed.error, "This is not a bot package"));
   const pkg = parsed.data.package;
 

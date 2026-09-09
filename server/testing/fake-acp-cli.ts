@@ -255,6 +255,7 @@ process.stdin.on("data", (c) => {
 function handle(msg: any) {
   // client's response to our permission request
   if (msg.id !== undefined && (msg.result !== undefined || msg.error !== undefined) && msg.id === pendingPermissionId) {
+    if (process.env.FAKE_ACP_DUMP) writeFileSync(`${process.env.FAKE_ACP_DUMP}.permission.json`, JSON.stringify(msg.result));
     pendingPermissionId = null;
     onPermissionAnswered?.();
     return;
@@ -493,7 +494,7 @@ function handle(msg: any) {
           method: "session/request_permission",
           params: {
             toolCall: { kind: "execute", rawInput: { command: "echo hi" }, title: "echo hi" },
-            options: [
+            options: process.env.FAKE_ACP_PERMISSION_OPTIONS ? JSON.parse(process.env.FAKE_ACP_PERMISSION_OPTIONS) : [
               { optionId: "allow-once", kind: "allow_once" },
               { optionId: "reject", kind: "reject_once" },
             ],

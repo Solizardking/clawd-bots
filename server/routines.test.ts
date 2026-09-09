@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -191,14 +191,14 @@ describe("RoutineManager", () => {
     });
     h.setNow(routine.nextRunAt!);
     await h.manager.tick();
-    h.manager.update(routine.id, { runOn: "maus" });
+    h.manager.update(routine.id, { runOn: "clawd" });
 
     h.setBot("ready");
     await h.manager.tick();
 
     expect(h.runOns).toEqual(["cloud"]);
     expect(h.manager.listRuns()[0]).toMatchObject({ runOn: "cloud" });
-    expect(h.manager.listRoutines()[0]).toMatchObject({ runOn: "maus" });
+    expect(h.manager.listRoutines()[0]).toMatchObject({ runOn: "clawd" });
   });
 
   it("opens webhook jobs in the assigned bot's live chat", async () => {
@@ -330,4 +330,14 @@ describe("RoutineManager", () => {
     expect(h.manager.listRuns()[0]).toMatchObject({ status: "missed" });
     expect(h.started).toHaveLength(0);
   });
+});
+
+it("loads legacy local routines and run receipts without changing their schedule or identity", () => {
+  const h = harness();
+  const routine = h.manager.create({name:"Legacy routine",prompt:"Read status",botId:"existing-bot",enabled:false,schedule:{type:"daily",time:"09:00",weekdays:[1]}});
+  const disk = JSON.parse(readFileSync(h.options.file!, "utf8"));
+  disk.routines[0].runOn = "maus";
+  writeFileSync(h.options.file!, JSON.stringify(disk));
+  const restored = new RoutineManager(h.options);
+  expect(restored.listRoutines()[0]).toEqual({...routine,runOn:"clawd"});
 });

@@ -201,3 +201,10 @@ describe("WebhookManager", () => {
     expect(() => h.manager.receive(webhook.endpointId, secret, { payload: { overflow: true }, eventName: "push" })).toThrow("rate limit");
   });
 });
+
+it("accepts legacy local webhook destinations and stores the Clawd destination", () => {
+  const h = harness();
+  const created = h.manager.create({name:"Legacy webhook",prompt:"Read status",botId:"existing-bot",runOn:"maus"});
+  expect(created.webhook.runOn).toBe("clawd");
+  expect(new WebhookManager(h.options).list()[0].runOn).toBe("clawd");
+});

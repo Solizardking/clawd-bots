@@ -6,7 +6,7 @@ import { mkdtemp } from "node:fs/promises";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const logPath = process.argv[2];
 const port = Number(process.argv[3] || 18799);
 const dataDir = await mkdtemp(path.join(os.tmpdir(), "clawd-harness-"));
@@ -18,7 +18,7 @@ const say = (line) => {
 
 const child = spawn(
   process.execPath,
-  ["--experimental-strip-types", path.join(repoRoot, "clawd/server/harness-entry.ts")],
+  ["--experimental-strip-types", path.join(repoRoot, "server/harness-entry.ts")],
   {
     cwd: repoRoot,
     env: {
@@ -87,7 +87,41 @@ if (typeof body.pid !== "number") throw new Error("pid missing");
 if (!body.solana || typeof body.solana.phantomConfigured !== "boolean") {
   throw new Error("solana status missing");
 }
+if (!Array.isArray(body.connectors) || body.connectors.length !== 6) {
+  throw new Error("connectors missing");
+}
 if (!textHasContent(JSON.stringify(body))) throw new Error("empty body");
+
+const created = await new Promise((resolve, reject) => {
+  const req = http.request(
+    {
+      hostname: "127.0.0.1",
+      port,
+      path: "/api/solana/wallets/local",
+      method: "POST",
+      headers: { "content-type": "application/json" },
+    },
+    (res) => {
+      const chunks = [];
+      res.on("data", (c) => chunks.push(c));
+      res.on("end", () => {
+        const text = Buffer.concat(chunks).toString("utf8");
+        say(`wallet-status=${res.statusCode}`);
+        say(`wallet-body=${text}`);
+        try {
+          resolve(JSON.parse(text));
+        } catch (error) {
+          reject(error);
+        }
+      });
+    },
+  );
+  req.on("error", reject);
+  req.end(JSON.stringify({ name: "intro" }));
+});
+if (!created?.address || !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(created.address)) {
+  throw new Error(`wallet create failed: ${JSON.stringify(created)}`);
+}
 say("OK");
 
 child.kill("SIGTERM");

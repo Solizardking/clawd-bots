@@ -114,8 +114,8 @@ targets:
     sources:
       - path: Widgets
       - path: Shared
-      - path: App/MausAvatar.swift
-      - path: App/MausFaceData.swift
+      - path: App/ClawdAvatar.swift
+      - path: App/ClawdFaceData.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.clawdbot.app.widgets

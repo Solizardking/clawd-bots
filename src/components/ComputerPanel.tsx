@@ -24,6 +24,7 @@ import type { Routine } from "@/lib/routines";
 import { ApiKeyRow } from "./ApiKeys";
 import { cn } from "@/lib/cn";
 import { usePageVisible } from "@/lib/page-visible";
+import { HostedComputerPanel } from "./HostedComputerPanel";
 import { CloudBackendPicker } from "./CloudBackendPicker";
 import { useDesktopCapabilities } from "./DesktopCapabilities";
 import { RoutineEditor } from "./RoutinesPage";
@@ -109,6 +110,10 @@ function nextRunLabel(at: number | null) {
 }
 
 export function ComputerPanel({ bot }: { bot: Bot }) {
+  return bot.cloudBackend === "e2b" && (!bot.computer || bot.computer === "cloud" || bot.computer === "off") ? <HostedComputerPanel key={bot.id} bot={bot} /> : <StandardComputerPanel key={bot.id} bot={bot} />;
+}
+
+function StandardComputerPanel({ bot }: { bot: Bot }) {
   const { state, dispatch } = useStore();
   const { capabilities, ready: capabilitiesReady } = useDesktopCapabilities();
   const localAvailable = capabilities.localComputer.available;
@@ -1220,7 +1225,7 @@ export function ComputerPanel({ bot }: { bot: Bot }) {
         <RoutineEditor
           bots={[bot]}
           lockedBotId={bot.id}
-          defaultRunOn={cloudRoutineReady ? "cloud" : "maus"}
+          defaultRunOn={cloudRoutineReady ? "cloud" : "clawd"}
           onClose={() => setCreatingRoutine(false)}
         />
       )}

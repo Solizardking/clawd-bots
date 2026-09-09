@@ -7,8 +7,8 @@ set -eu
 # DEB also needs Electron's Chromium sandbox to be root-owned and setuid. Repair
 # only the exact package-owned paths; never weaken a runtime validator and never
 # ask an end user to run chmod manually.
-if [ -n "${OPENMAUSBOT_POSTINSTALL_TEST_ROOT:-}" ]; then
-  TEST_ROOT="$(realpath -e -- "$OPENMAUSBOT_POSTINSTALL_TEST_ROOT")"
+if [ -n "${CLAWDBOT_POSTINSTALL_TEST_ROOT:-}" ]; then
+  TEST_ROOT="$(realpath -e -- "$CLAWDBOT_POSTINSTALL_TEST_ROOT")"
   case "$TEST_ROOT" in
     /tmp/*) APP_ROOT=$TEST_ROOT ;;
     *)

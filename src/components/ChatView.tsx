@@ -1,3 +1,4 @@
+import { ResearchPanel, ResearchCard } from './Research';
 import { Component, memo, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   AlertTriangle,
@@ -37,7 +38,7 @@ import {
   type Message,
 } from "@/state/store";
 import { EngineSetup } from "./EngineSetup";
-import { BotAvatar, MausAvatar } from "./Avatar";
+import { BotAvatar, ClawdAvatar } from "./Avatar";
 import { stateForBot } from "@/lib/mascot";
 import { showWorkingDots } from "@/lib/turn-tail";
 import { ChatMarkdown } from "./ChatMarkdown";
@@ -560,7 +561,7 @@ function ActivityChip({ message }: { message: Message }) {
           title={`Open the conversation with ${comm.withName}`}
           className="flex items-center gap-2 rounded-full border border-hairline/40 bg-panel px-3 py-1.5 text-[13px] text-ink-secondary hover:bg-raised hover:text-ink"
         >
-          <MausAvatar color={comm.withColor} state="happy" size={16} />
+          <ClawdAvatar color={comm.withColor} state="happy" size={16} />
           <span className="max-w-[480px] truncate">{tool.name}</span>
           <ChevronRight size={13} />
         </button>
@@ -712,6 +713,7 @@ const MessagesList = memo(function MessagesList({
         }
         const m = item.message;
         const row = (() => {
+          if (m.research) return <ResearchCard data={m.research} bot={bot}/>;
           switch (m.kind) {
             case "secret":
               return m.secret ? <SecretRequestCard botId={bot.id} threadId={bot.threadId} message={m} /> : null;
@@ -1011,7 +1013,7 @@ export function ChatView({ bot }: { bot: Bot }) {
         className={cn(
           // @container so the chips on the right can fold to icon bubbles
           // when the column is narrow (side panel open, small window)
-          "@container/chathead flex items-center justify-between px-5 py-3",
+          "@container/chathead flex items-center justify-between px-5 py-3 max-md:flex-wrap max-md:gap-2",
           // Room for the drawer button, which overlays this corner below md.
           "pl-11 md:pl-5",
           isWin && "pr-[148px]",
@@ -1048,7 +1050,7 @@ export function ChatView({ bot }: { bot: Bot }) {
           )}
           {bot.busy && <Loader2 size={14} className="animate-spin text-ink-secondary" />}
         </div>
-        <div className="flex shrink-0 items-center gap-2" style={noDrag}>
+        <div className="flex shrink-0 items-center gap-2 max-md:w-full max-md:flex-wrap" style={noDrag}>
           <button
             onClick={() => setFindOpen((open) => !open)}
             aria-label="Find in conversation"
@@ -1242,6 +1244,7 @@ export function ChatView({ bot }: { bot: Bot }) {
           the previous bot's half-written message over. ArrowUp-to-edit is
           gated on busy like the pencil button — editing rewinds the thread,
           which a live turn forbids (the server 409s it). */}
+      <ResearchPanel key={bot.id+bot.threadId} bot={bot}/>
       <Composer
         key={bot.id}
         bot={bot}

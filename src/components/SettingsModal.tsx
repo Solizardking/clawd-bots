@@ -18,6 +18,7 @@ import { SkinPicker } from "./SkinPicker";
 import { RoomTurnTimeoutSettings } from "./RoomTurnTimeoutSettings";
 import { TranscriptionSettings } from "./TranscriptionSettings";
 import { SolanaSettings } from "./SolanaSettings";
+import { PetsSettings } from "./Pets";
 import { cn } from "@/lib/cn";
 
 const SECTIONS: Array<{
@@ -26,6 +27,7 @@ const SECTIONS: Array<{
   icon: typeof User;
   keywords: string[];
 }> = [
+  { id: "pets", label: "Pets", icon: User, keywords: ["pet", "codex", "clawd", "spinner", "generate", "import"] },
   { id: "general", label: "General", icon: User, keywords: ["profile", "name", "email", "skin", "theme", "appearance", "analytics", "updates"] },
   { id: "connections", label: "Connections", icon: KeyRound, keywords: ["keys", "api", "composio", "box", "xai", "vps"] },
   { id: "solana", label: "Solana", icon: Wallet, keywords: ["solana", "helius", "phantom", "jupiter", "wallet", "pump"] },
@@ -375,6 +377,7 @@ export function SettingsModal() {
           </div>
 
           <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-5 pb-5">
+            {section === "pets" && <PetsSettings />}
             {section === "general" && (
               <>
                 <Card title="Profile" subtitle="Shown in the sidebar. Saved as you go.">

@@ -119,6 +119,24 @@ describe("OpenAICompatDriver", () => {
     await inst.dispose();
   });
 
+  it.each([
+    'data: {"error":{"message":"private upstream diagnostics","code":503}}\n',
+    'data: {"choices":[{"delta":{"reasoning_content":"unfinished"}}]}\n',
+    'data: [DONE]\n',
+  ])("reports failed streams instead of empty successful turns", async (stream) => {
+    vi.stubGlobal("fetch", vi.fn(async (input) => String(input).endsWith("/models")
+      ? Response.json({data:[]}) : new Response(stream,{headers:{"content-type":"text/event-stream"}})));
+    const inst=await OpenAICompatDriver.create({instanceId:"stream-failure",displayName:"Test",enabled:true,
+      config:{url:"https://example.test/v1",apiKeyEnv:"TEST_KEY"},environment:{TEST_KEY:"secret"}});
+    const recorder=recordEvents(inst.adapter);
+    await inst.adapter.sendTurn({threadId:"failed-stream",text:"question",model:"vendor/model"});
+    expect(await recorder.until(event=>event.type==="turn.completed")).toMatchObject({ok:false,stopReason:"error"});
+    expect(recorder.events).toContainEqual(expect.objectContaining({type:"runtime.error"}));
+    expect(JSON.stringify(recorder.events)).not.toContain("private upstream diagnostics");
+    expect(recorder.events).not.toContainEqual(expect.objectContaining({type:"item.completed",itemType:"assistant_text"}));
+    recorder.stop();await inst.dispose();
+  });
+
   it("streams reasoning separately and completes only actual assistant text", async () => {
     vi.stubGlobal(
       "fetch",

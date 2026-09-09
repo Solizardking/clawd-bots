@@ -110,6 +110,26 @@ if (!details.isFile() || (details.mode & 0o111) === 0) {
 // supportedArchitectures in package.json.
 const MAC_ARCHES = resolveCuaMacArches(process.env);
 
+async function nativePackageForArch(arch) {
+  const installed=join(dependencyRoot,'@trycua',`cua-driver-darwin-${arch}`);
+  if(existsSync(installed))return installed;
+  // npm omits foreign-architecture optional dependencies on Apple silicon.
+  // Stage the exact official Intel package without changing the host install.
+  if(arch!=='x64'||expectedVersion!=='0.20.0')throw new Error(`Missing CUA native package for ${arch} ${expectedVersion}`);
+  const cache=join(root,'node_modules','.cache','clawdbot',`cua-native-${expectedVersion}-${arch}`);
+  const archive=await fetch(`https://registry.npmjs.org/@trycua/cua-driver-darwin-x64/-/cua-driver-darwin-x64-${expectedVersion}.tgz`,{redirect:'error',signal:AbortSignal.timeout(60000)});
+  if(!archive.ok)throw new Error(`CUA native download failed: HTTP ${archive.status}`);
+  const bytes=Buffer.from(await archive.arrayBuffer());
+  const expected='4T2+qPYvW8ZUi6XYJM9r6mjfllw3zyEZUUdYvy9Q1WQA6HjcY4mXhXFlEfLjWE0wOeXYrNEXJ8JyYEL0jlzmtw==';
+  if(createHash('sha512').update(bytes).digest('base64')!==expected)throw new Error('CUA native package integrity mismatch');
+  await mkdir(cache,{recursive:true});
+  const tarball=join(cache,'native.tgz');await writeFile(tarball,bytes);
+  await run('/usr/bin/tar',['-xzf',tarball,'--strip-components=1','-C',cache]);
+  const metadata=JSON.parse(await readFile(join(cache,'package.json'),'utf8'));
+  if(metadata.version!==expectedVersion||metadata.name!=='@trycua/cua-driver-darwin-x64')throw new Error('Unexpected CUA native package');
+  return cache;
+}
+
 const { stdout: archList } = await run("/usr/bin/lipo", ["-archs", binary]);
 for (const arch of MAC_ARCHES) {
   const lipoName = arch === "x64" ? "x86_64" : arch;
@@ -131,7 +151,7 @@ for (const arch of MAC_ARCHES) {
   await run("/usr/bin/codesign", ["--force", "--sign", "-", "--options", "runtime", join(archStage, "cua-driver")]);
 
   const nativeDir = join(archStage, "cua-sdk", "native");
-  const nativePackage = join(dependencyRoot, "@trycua", `cua-driver-darwin-${arch}`);
+  const nativePackage = await nativePackageForArch(arch);
   if (!existsSync(nativePackage)) {
     throw new Error(
       `required CUA darwin-${arch} native package is missing — is pnpm.supportedArchitectures.cpu set in package.json?`,
@@ -180,7 +200,7 @@ await writeFile(
   bundle,
   bundledSource.replace(
     resolverPattern,
-    `${resolvers[0]}\n      if (process.env.OPENMAUSBOT_CUA_SDK_LIBRARY) return resolveOverride(opts.crateName, process.env.OPENMAUSBOT_CUA_SDK_LIBRARY);`,
+    `${resolvers[0]}\n      if (process.env.CLAWDBOT_CUA_SDK_LIBRARY) return resolveOverride(opts.crateName, process.env.CLAWDBOT_CUA_SDK_LIBRARY);`,
   ),
 );
 

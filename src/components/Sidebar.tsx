@@ -172,8 +172,8 @@ function groupPreview(group: Group, bots: Bot[]): string {
   return last.from ? `${last.from.name}: ${text}` : text;
 }
 
-/** Room avatar: 2–3 overlapping mauses in the same 56px slot a bot gets. */
-function StackedMauses({ members, density }: { members: Bot[]; density: SidebarDensity }) {
+/** Room avatar: 2–3 overlapping clawds in the same 56px slot a bot gets. */
+function StackedClawds({ members, density }: { members: Bot[]; density: SidebarDensity }) {
   const iconOnly = density === "icons";
   const slotSize = iconOnly ? "size-12" : density === "compact" ? "size-10" : "size-14";
   const singleSize = iconOnly ? 44 : density === "compact" ? 40 : 56;
@@ -242,7 +242,7 @@ function GroupListItem({
       title={density === "icons" ? group.name : undefined}
       aria-label={density === "icons" ? group.name : undefined}
     >
-      <StackedMauses members={members} density={density} />
+      <StackedClawds members={members} density={density} />
       <div className={cn("min-w-0 flex-1", density === "icons" && "hidden")}>
         <div className="flex items-baseline justify-between gap-2">
           <span className="truncate text-[15px] font-semibold text-ink">{group.name}</span>
@@ -1547,6 +1547,12 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
           {state.routineRuns.some((run) => ["failed", "missed"].includes(run.status) && !run.seenAt) && (
             <span className="size-2 rounded-full bg-danger" />
           )}
+        </button>
+        <button onClick={() => window.dispatchEvent(new Event("clawd:open-solana"))} aria-label="Solana mode" title="Solana mode" className={cn("flex min-h-10 w-full items-center rounded-xl py-2 text-left text-ink hover:bg-raised/50", density === "icons" ? "justify-center px-2" : "gap-3 px-3")}>
+          <img src="./brand/solana/logomark.svg" alt="" className="size-5" /><span className={cn("text-[14px]", density === "icons" && "hidden")}>Solana mode</span>
+        </button>
+        <button onClick={() => window.dispatchEvent(new Event("clawd:open-pump-tokens"))} aria-label="Pump.fun tokens" title="Pump.fun tokens" className="flex min-h-10 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-ink hover:bg-raised/50">
+          <span aria-hidden="true">◈</span><span className={cn("text-[14px]", density === "icons" && "hidden")}>Pump.fun tokens</span>
         </button>
         <button
           onClick={() => dispatch({ type: "togglePlugins", open: true })}

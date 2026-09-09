@@ -1,43 +1,42 @@
-# OpenCode
+# Use OpenCode with Clawd Bot
 
-OpenCode is an optional Clawd Bot engine. Clawd Bot runs the maintained
-OpenCode CLI through its ACP stdio interface, so sessions, streaming, coding
-tools, permission requests, MCP integrations, resume, and cancellation use the
-same runtime as the other ACP engines.
+OpenCode is an optional CLI-backed engine. Clawd Bot starts `opencode acp` and uses its shared ACP runtime for conversations, tools, permissions, resume, and cancellation. The internal driver kind remains `opencodeGo` so existing bot configurations keep working; the UI name is **OpenCode**.
 
 ## Setup
 
-1. Install the official CLI using the
-   [OpenCode installation guide](https://opencode.ai/docs/).
-2. Connect the providers you want in the OpenCode app, or run
-   `opencode auth login`.
-3. Restart Clawd Bot. It reuses OpenCode's existing connections and model
-   configuration automatically.
+Install the maintained CLI using the [OpenCode installation guide](https://opencode.ai/docs/), then connect providers in OpenCode or run:
 
-OpenCode includes anonymous free models. A Zen, Go, OpenRouter, or other
-provider connection expands the catalog according to the installed CLI. An
-OpenCode API key can optionally be stored under Settings → Connections. It is
-write-only and injected as `OPENCODE_API_KEY` only into the OpenCode child
-process; it is not sent to the renderer, logs, analytics, snapshots, error
-messages, or command arguments.
+```sh
+opencode auth login
+opencode models --verbose
+```
 
-Clawd Bot does not copy or rewrite `auth.json`. The OpenCode CLI remains the
-owner of provider authentication, and the same Zen or Go connection used by
-the OpenCode desktop/TUI is used by Clawd Bot.
+If npm reports that OpenCode's required postinstall script was blocked, finish the same installation with `npm install -g opencode-ai --allow-scripts=opencode-ai`. This grants that package's install script for this invocation; verify `opencode --version` and `opencode acp --help` afterward.
 
-## Models
+Refresh the engine inventory in Clawd Bot (or restart it) and select an available OpenCode model. Availability can come from an explicit `OPENCODE_API_KEY`, an existing OpenCode login, or a successful usable-model probe. Free or anonymous offerings depend on the installed CLI and provider; they are not a fixed Clawd Bot entitlement.
 
-The model picker runs `opencode models --verbose` against the configured binary
-and preserves every exact `provider/model` ID returned by the CLI. This can
-include Zen (`opencode/*`), Go (`opencode-go/*`), third-party providers, custom
-configuration, and local endpoints. If discovery temporarily fails, the last
-successful catalog is used, followed by a small anonymous-model fallback.
+An optional key saved through Connections is write-only to the UI and passed to the OpenCode child process. OpenCode owns `auth.json`; Clawd Bot reads login presence without rewriting that authentication file.
 
-Before every prompt, ACP receives `session/set_config_option` with
-`configId: "model"` and the exact selected provider-qualified model ID.
+## Catalog and model selection
 
-## Testing
+Discovery runs the configured binary's `opencode models --verbose`. It preserves exact `provider/model` identifiers, including configured third-party providers and local endpoints. A failed refresh uses the last successful catalog, then a small fallback. Discovery alone does not validate inference or billing access.
 
-Normal unit and ACP protocol tests do not require a subscription. Live tests
-must be explicitly enabled and must never print credentials or upload native
-protocol logs from a credentialed run.
+Before prompting, ACP selects the model using `session/set_config_option` with `configId: "model"`. Legacy preview model IDs may be normalized by the adapter.
+
+## Local injected models
+
+Selecting an injected local model is a separate configuration path: `ensureOpenCodeInjectModel` can add or update that host's provider and model in OpenCode's `opencode.json`, then return its native `host/model` ID. It may persist the configured host API key in those provider options. This differs from ordinary login discovery; inspect the target configuration before using this path on a shared machine. It does not rewrite `auth.json`.
+
+## Permission decisions
+
+OpenCode's [permission configuration](https://opencode.ai/docs/permissions/) determines which tool calls reach Clawd for approval. Clawd answers each surfaced request with a one-time decision; it does not select session-wide `allow_always` or `reject_always` options. If the CLI offers no matching one-time option, Clawd cancels the request and reports that it could not apply the requested decision.
+
+## Verification
+
+```sh
+npx vitest run server/drivers/acp/opencode-go.test.ts server/drivers/acp/acp.test.ts
+```
+
+The fake CLI covers protocol behavior without a subscription. A credentialed smoke must separately confirm a real reply, model selection, tools, approval, resume, and cancellation. Keep credentials and raw authenticated protocol logs out of test output.
+
+Source: [OpenCode adapter](../server/drivers/acp/opencode-go.ts). Older Go-only designs are retained in [the planning archive](plans/README.md); the CLI-derived catalog described here takes precedence.

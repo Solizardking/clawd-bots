@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { BotSettingsDialog } from "../components/BotSettingsDialog";
+import { SettingsPanel } from "../components/SettingsPanel";
 import { StoreProvider, api, useStore, type Bot } from "../state/store";
 import { applySkin } from "../lib/skins";
 import "../styles.css";
@@ -69,8 +69,8 @@ function Fixture() {
     </div>}
     <p className="my-3">Selected: {bot?.name ?? "Loading…"}</p>
     {state.error && <p role="alert" className="text-danger">{state.error}</p>}
-    <pre aria-label="Saved profiles" className="my-4 whitespace-pre-wrap">{JSON.stringify(saved.map(({ id, name, description, soul }) => ({ id, name, description, soul })), null, 2)}</pre>
-    {state.settingsOpen && bot && <BotSettingsDialog key={bot.id} bot={bot} />}
+    <pre aria-label="Saved profiles" className="my-4 whitespace-pre-wrap">{JSON.stringify(saved.map(({ id, name, description }) => ({ id, name, description })), null, 2)}</pre>
+    {state.settingsOpen && bot && <SettingsPanel key={bot.id} bot={bot} />}
   </main>;
 }
 

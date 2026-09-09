@@ -480,6 +480,7 @@ describe("computer proxy control gate (fake box + fake control)", () => {
   let helpOpen = false;
   let failHelpPost = false;
   const expiredHelpIds: string[] = [];
+  let heldReads = 0;
   const authHeaders: Array<string | undefined> = [];
 
   const rpc = (msg: unknown) => proxy.stdin!.write(JSON.stringify(msg) + "\n");
@@ -547,6 +548,7 @@ describe("computer proxy control gate (fake box + fake control)", () => {
         return;
       }
       res.writeHead(200, { "content-type": "application/json" });
+      if (held) heldReads++;
       res.end(JSON.stringify({ held, helpOpen }));
     });
     await new Promise<void>((r) => controlServer.listen(0, "127.0.0.1", r));
@@ -617,8 +619,9 @@ describe("computer proxy control gate (fake box + fake control)", () => {
   it("computer_request_help waits out the drive and reports the hand-back", async () => {
     held = true;
     helpOpen = false;
+    const previousHeldReads = heldReads;
     rpc({ jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "computer_request_help", arguments: {} } });
-    await new Promise((r) => setTimeout(r, 120));
+    await expect.poll(() => heldReads, { timeout: 1000 }).toBeGreaterThan(previousHeldReads);
     expect(results.has(5)).toBe(false); // still waiting while they drive
     held = false;
     const result = await waitFor(5);
@@ -632,8 +635,7 @@ describe("computer proxy control gate (fake box + fake control)", () => {
     helpOpen = false;
     await new Promise((r) => setTimeout(r, 40));
     rpc({ jsonrpc: "2.0", id: 6, method: "tools/call", params: { name: "computer_request_help", arguments: { reason: "please log in" } } });
-    await new Promise((r) => setTimeout(r, 120));
-    expect(helpOpen).toBe(true); // the POST landed
+    await expect.poll(() => helpOpen, { timeout: 1000 }).toBe(true); // the POST landed
     expect(results.has(6)).toBe(false); // and the bot is waiting
     helpOpen = false; // the person dismissed it
     const result = await waitFor(6);

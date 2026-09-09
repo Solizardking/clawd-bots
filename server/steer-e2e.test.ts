@@ -51,7 +51,7 @@ posixOnly("mid-turn steering e2e", () => {
       join(home, ".clawdbot", "config.json"),
       JSON.stringify({
         instances: {
-          claude: { driver: "claudeAgent", environment: { FAKE_CLAUDE_MODE: "slow" }, config: { cli: FAKE_CLAUDE, permissionMode: "bypassPermissions" } },
+          fixtureClaude: { driver: "claudeAgent", environment: { FAKE_CLAUDE_MODE: "slow" }, config: { cli: FAKE_CLAUDE, permissionMode: "bypassPermissions" } },
           // no live session: a message while busy uses the server-side queue
           acp: { driver: "grokAgent", environment: { FAKE_ACP_MODE: "hang" }, config: { cli: FAKE_ACP, fullAuto: true } },
         },
@@ -90,9 +90,9 @@ posixOnly("mid-turn steering e2e", () => {
     "a message during a Claude turn is steered into it: 202, in the transcript in order and marked, folded into the reply",
     async () => {
       const created = (await api("POST", "/api/bots")).body.bot;
-      await api("PATCH", `/api/bots/${created.id}`, { modelSelection: { instanceId: "claude", model: "claude-fake" } });
+      await api("PATCH", `/api/bots/${created.id}`, { modelSelection: { instanceId: "fixtureClaude", model: "claude-fake" } });
       const instances = (await api("GET", "/api/instances")).body.instances;
-      expect(instances.find((i: any) => i.instanceId === "claude").capabilities.queueing).toBe(true);
+      expect(instances.find((i: any) => i.instanceId === "fixtureClaude").capabilities.queueing).toBe(true);
 
       expect((await api("POST", `/api/bots/${created.id}/messages`, { text: "first" })).status).toBe(202);
       await waitFor(async () => (await getBot(created.id)).busy === true, "the turn to start");

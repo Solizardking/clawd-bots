@@ -3,8 +3,9 @@
 // payloads stay in the top group. VibeCoder would join Local later.
 import type { InstanceInfo } from "@/state/store";
 
-export function isCustomOnly(instance: { access?: InstanceInfo["access"] } | undefined): boolean {
-  return instance?.access === "custom";
+export function isCustomOnly(instance: { access?: InstanceInfo["access"]; driverKind?: string } | undefined): boolean {
+  // Compatible HTTP engines publish their own catalog, including hosted models.
+  return instance?.access === "custom" && instance.driverKind !== "openai-compat";
 }
 
 export function splitEngineRail<T>(instances: readonly T[]): {

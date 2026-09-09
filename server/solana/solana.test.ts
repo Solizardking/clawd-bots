@@ -34,6 +34,26 @@ import { createSolanaService, isValidSolanaAddress, readWalletRegistry } from ".
 import { SOLANA_FAMILY_TOOLS } from "./tools.ts";
 
 const scratch: string[] = [];
+it("uses hosted Tracker for SOL balances and Helius for indexed assets without local provider keys", async () => {
+  const paths: string[] = [];
+  const solana = createSolanaService({
+    revealSecret: async () => null,
+    readRegistry: async () => ({ wallets: [] }),
+    writeRegistry: async () => {},
+    loadServerSdk: async () => { throw new Error("unused"); },
+    hostedAccess: () => ({ origin: "https://clawd.example", token: "user-access-token" }),
+    fetchImpl: async (url, init) => {
+      paths.push(String(url));
+      expect(init?.redirect).toBe("error");
+      expect(init?.headers).toEqual({ "content-type": "application/json", authorization: "Bearer user-access-token" });
+      return Response.json({result: String(url).endsWith("/solana/rpc") ? {value: 123} : {items: []}});
+    },
+  });
+  expect(await solana.getBalanceLamports("11111111111111111111111111111111")).toBe(123);
+  await solana.getWalletAssets({ownerAddress: "11111111111111111111111111111111"});
+  expect(paths).toEqual(["https://clawd.example/solana/rpc", "https://clawd.example/helius/rpc"]);
+  expect((await solana.getStatus()).heliusConfigured).toBe(true);
+});
 afterEach(async () => {
   for (const dir of scratch.splice(0)) await rm(dir, { recursive: true, force: true });
 });

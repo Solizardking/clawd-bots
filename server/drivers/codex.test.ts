@@ -291,7 +291,7 @@ describe("CodexDriver turns (fake app-server)", () => {
     const seen = JSON.parse(readFileSync(dump, "utf8"));
     expect(seen.argv).toContain("model_providers.unsloth.base_url=\"http://127.0.0.1:8888/v1\"");
     expect(JSON.stringify(seen.argv)).not.toContain("unsloth-secret");
-    expect(seen.env.OPENMAUSBOT_LOCAL_UNSLOTH_API_KEY).toBe("unsloth-secret");
+    expect(seen.env.CLAWDBOT_LOCAL_UNSLOTH_API_KEY).toBe("unsloth-secret");
   });
 
   it("streams agentMessage deltas without re-emitting the settled text", async () => {

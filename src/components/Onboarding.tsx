@@ -1,353 +1,191 @@
-import { useEffect, useState, type ReactNode } from "react";
-import { Check, AlertTriangle, Loader2, Mic } from "lucide-react";
-import { ClawdAvatar } from "./Avatar";
-import { PRODUCT_NAME } from "../../shared/product";
-import { identifyEmail, setEmailGateDone, track } from "@/lib/analytics";
-import { useDesktopCapabilities } from "./DesktopCapabilities";
-import { EngineSetup } from "./EngineSetup";
-import { ProviderMark } from "./ProviderIcons";
-import { PhoneSetupFlow } from "./PhoneSetupFlow";
-import type { InstanceInfo } from "@/state/store";
+import { useEffect, useMemo, useState } from "react";
+import { INTRO_BODY, INTRO_HEADING, PRODUCT_NAME } from "../../shared/product";
+import {
+  CONNECTORS,
+  connectConnector,
+  connectorStatus,
+  type ConnectorConnectResult,
+  type ConnectorId,
+  type ConnectorStatus,
+} from "../../shared/connectors";
+import { setEmailGateDone, track } from "@/lib/analytics";
+import { createIntroTapeClient, PUMP_TAPE_HTTP, type PumpLaunchMessage } from "@/lib/intro-tape";
 
-// First-run onboarding: who you are (email), what's installed (live engine
-// checks from the harness), what the app may use (TCC), then an optional
-// phone setup that can always be resumed from Settings → Phone.
-// Every check is skippable — onboarding must never brick the app.
-
-type InstanceRow = InstanceInfo;
-
-function StatusRow({
-  ok,
-  warn,
-  title,
-  detail,
-  mark,
-  children,
-}: {
-  ok: boolean;
-  warn?: boolean;
-  title: string;
-  detail?: string;
-  mark?: ReactNode;
-  children?: ReactNode;
-}) {
-  return (
-    <div className="flex items-start gap-3 rounded-xl bg-card p-3.5">
-      <span
-        className={`mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full ${
-          ok ? "bg-[#00c97222] text-[#38d591]" : warn ? "bg-[#ff980022] text-[#ff9800]" : "bg-raised text-ink-secondary"
-        }`}
-      >
-        {ok ? <Check size={14} /> : <AlertTriangle size={13} />}
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 text-[14px] font-medium text-ink">
-          {mark}
-          <span className="min-w-0 truncate">{title}</span>
-        </div>
-        {detail && <div className="mt-0.5 text-[12.5px] leading-relaxed text-ink-secondary">{detail}</div>}
-        {children}
-      </div>
-    </div>
-  );
-}
-
-/** One engine on the setup screen: what it's called, what the harness
- * found, and the one-liner to show when it's good to go. Ready states get
- * a sentence; anything the user has to act on gets the shared setup UI, so
- * the instructions come from the driver and are correct for this platform. */
-interface EngineEntry {
-  instance: InstanceRow;
-  label: string;
-  readyNote: string;
-}
-
-function engineReady(instance: InstanceRow): boolean {
-  return (
-    instance.snapshot.state === "available" &&
-    (instance.access === "custom" || instance.snapshot.authenticated !== false)
-  );
-}
-
-function engineTitle({ instance, label }: EngineEntry): string {
-  const version = instance?.snapshot.version ? ` · ${instance.snapshot.version.split(" ")[0]}` : "";
-  return `${label}${version}`;
-}
-
-/** A ready engine needs no attention: a small tile in the grid, so five
- * engines don't read as one long list where the good news and the setup
- * work look the same. */
-function ReadyTile(entry: EngineEntry) {
-  return (
-    <div className="flex items-start gap-2.5 rounded-xl bg-card p-3">
-      <ProviderMark driverKind={entry.instance.driverKind} size={17} />
-      <div className="min-w-0">
-        <div className="truncate text-[13.5px] font-medium text-ink">{engineTitle(entry)}</div>
-        <div className="mt-0.5 text-[12px] leading-snug text-ink-secondary">{entry.readyNote}</div>
-      </div>
-    </div>
-  );
-}
-
-/** An engine that still needs installing or signing in keeps the full-width
- * row: the command box and terminal button need the room. */
-function SetupRow(entry: EngineEntry) {
-  return (
-    <StatusRow
-      ok={false}
-      warn
-      title={engineTitle(entry)}
-      mark={<ProviderMark driverKind={entry.instance.driverKind} size={16} />}
-    >
-      <EngineSetup
-        instance={entry.instance}
-        className="mt-0.5"
-        intent={entry.instance.access === "custom" ? "inject" : "cloud"}
-      />
-    </StatusRow>
-  );
+function shortAddress(value: string): string {
+  if (value.length <= 12) return value;
+  return `${value.slice(0, 4)}…${value.slice(-4)}`;
 }
 
 export function Onboarding({ onDone }: { onDone: () => void }) {
-  const { capabilities } = useDesktopCapabilities();
-  const [step, setStep] = useState(0);
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [instances, setInstances] = useState<InstanceRow[] | null>(null);
-  const [perms, setPerms] = useState<{ mic: string } | null>(null);
-  const valid = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim());
+  const [statuses, setStatuses] = useState<ConnectorStatus[]>(() => CONNECTORS.map((row) => connectorStatus(row.id)));
+  const [connectFlash, setConnectFlash] = useState<Record<string, ConnectorConnectResult>>({});
+  const [walletName, setWalletName] = useState("Clawd");
+  const [walletAddress, setWalletAddress] = useState<string | null>(null);
+  const [walletError, setWalletError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [launches, setLaunches] = useState<PumpLaunchMessage[]>([]);
+  const [tapeLive, setTapeLive] = useState(false);
 
-  const saveProfile = () => {
-    identifyEmail(email.trim().toLowerCase());
-    // persisted server-side (~/.clawdbot/config.json) — the sidebar
-    // footer reads it back through /api/config
-    void fetch("/api/config", {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ profile: { name: name.trim(), email: email.trim().toLowerCase() } }),
-    }).catch(() => {});
-    setStep(1);
+  const tape = useMemo(() => {
+    const client = createIntroTapeClient({
+      onChange: () => {
+        setTapeLive(true);
+        setLaunches(client.recent());
+      },
+    });
+    return client;
+  }, []);
+
+  useEffect(() => {
+    track("onboarding_step", { step: "clawd-solana-intro" });
+    tape.start();
+    fetch("/api/connectors")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body) => {
+        if (body && Array.isArray(body.connectors)) setStatuses(body.connectors);
+      })
+      .catch(() => {});
+    return () => tape.stop();
+  }, [tape]);
+
+  const onConnect = (id: ConnectorId) => {
+    const result = connectConnector(id);
+    setConnectFlash((current) => ({ ...current, [id]: result }));
+    void fetch(`/api/connectors/${id}/connect`, { method: "POST" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body) => {
+        if (body && typeof body.id === "string") {
+          setConnectFlash((current) => ({ ...current, [id]: body as ConnectorConnectResult }));
+        }
+      })
+      .catch(() => {});
   };
 
-  useEffect(() => {
-    track("onboarding_step", { step });
-  }, [step]);
+  const onCreateWallet = () => {
+    if (creating) return;
+    setCreating(true);
+    setWalletError(null);
+    void fetch("/api/solana/wallets/local", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: walletName.trim() || "Clawd" }),
+    })
+      .then(async (res) => {
+        const body = (await res.json().catch(() => null)) as { address?: string; error?: string } | null;
+        if (!res.ok || typeof body?.address !== "string") {
+          throw new Error(body?.error ?? "Could not reach the harness to create a wallet.");
+        }
+        setWalletAddress(body.address);
+      })
+      .catch((error: unknown) => {
+        setWalletError(error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => setCreating(false));
+  };
 
-  useEffect(() => {
-    if (step !== 1) return;
-    let active = true;
-    let latestRequest = 0;
-    const refresh = () => {
-      const request = ++latestRequest;
-      fetch("/api/instances")
-        .then((r) => r.json())
-        .then((d) => active && request === latestRequest && setInstances(d.instances ?? []))
-        .catch(() => active && request === latestRequest && setInstances([]));
-    };
-    refresh();
-    window.addEventListener("focus", refresh);
-    return () => {
-      active = false;
-      window.removeEventListener("focus", refresh);
-    };
-  }, [step]);
-
-  useEffect(() => {
-    if (step === 2 && capabilities.dictation.available) {
-      const poll = () => window.ogb?.permStatus?.().then(setPerms).catch(() => {});
-      poll();
-      // keep polling — the user may grant in System Settings and come back
-      const t = setInterval(poll, 2000);
-      return () => clearInterval(t);
-    }
-  }, [step, capabilities.dictation.available]);
-
-  const finish = () => {
-    track("onboarding_completed", {
-      engines_available: instances?.filter((i) => i.snapshot.state === "available").length ?? -1,
-      mic: perms?.mic ?? "n/a",
-    });
+  const enter = () => {
+    track("onboarding_completed", { intro: "clawd-solana" });
     setEmailGateDone("submitted");
     onDone();
   };
 
-  const engines: EngineEntry[] = (instances ?? [])
-    .filter((instance) => instance.install)
-    .map((instance) => ({
-      instance,
-      label: instance.displayName,
-      readyNote:
-        instance.access === "custom"
-          ? "Installed — ready for a local model."
-          : "Installed — ready to power bots.",
-    }));
-  const readyEngines = engines.filter((e) => engineReady(e.instance));
-  const setupEngines = engines.filter((e) => !engineReady(e.instance));
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-app p-8">
-      {/* the engines step lays tiles out two across, so it gets more room —
-          but never more than the window: the panel caps at the viewport and
-          the engine list scrolls inside it, so the header and Continue stay
-          put and nothing runs into the edges */}
-      <div
-        className={`flex max-h-full w-full flex-col rounded-2xl border border-hairline/40 bg-panel p-8 ${step === 1 ? "max-w-[680px]" : step === 3 ? "max-w-[620px]" : "max-w-[460px]"}`}
-      >
-        {step === 0 && (
-          <div className="flex flex-col items-center">
-            <ClawdAvatar color="green" state="happy" size={72} />
-            <h1 className="mt-4 text-[20px] font-semibold text-ink">Welcome to {PRODUCT_NAME}</h1>
-            <p className="mt-1.5 text-center text-[14px] leading-relaxed text-ink-secondary">
-              Solana-native bots that do real work. {PRODUCT_NAME} ships on the
-              cluster palette and talks to local wallets plus routed Solana tools.
-            </p>
-            <input
-              autoFocus
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Your name"
-              className="mt-5 w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2.5 text-[15px] text-ink placeholder:text-ink-secondary focus:border-hairline focus:outline-none"
-            />
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && valid && saveProfile()}
-              placeholder="you@example.com"
-              className="mt-3 w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2.5 text-[15px] text-ink placeholder:text-ink-secondary focus:border-hairline focus:outline-none"
-            />
-            <button
-              onClick={saveProfile}
-              disabled={!valid}
-              className="mt-3 w-full rounded-lg bg-accent py-2.5 text-[15px] font-medium text-white disabled:opacity-40"
-            >
-              Continue
-            </button>
-            <button
-              onClick={() => {
-                track("email_skipped");
-                setStep(1);
-              }}
-              className="mt-3 text-[12px] text-ink-secondary hover:text-ink"
-            >
-              Maybe later
-            </button>
-          </div>
-        )}
-
-        {step === 1 && (
-          <div className="flex min-h-0 flex-col">
-            <h1 className="text-[18px] font-semibold text-ink">Your engines</h1>
-            <p className="mt-1 text-[13.5px] text-ink-secondary">
-              Bots run on AI tools installed on this computer — here&rsquo;s what we found.
-            </p>
-            <div className="mt-4 flex min-h-0 flex-col gap-2.5 overflow-y-auto pr-1 [scrollbar-width:thin]">
-              {!instances ? (
-                <div className="flex items-center gap-2 py-6 text-ink-secondary">
-                  <Loader2 size={16} className="animate-spin" /> Checking…
-                </div>
-              ) : (
-                <>
-                  {readyEngines.length > 0 && (
-                    <>
-                      <div className="text-[11.5px] font-medium uppercase tracking-wide text-ink-secondary">Ready</div>
-                      <div className="grid grid-cols-2 gap-2.5">
-                        {readyEngines.map((e) => (
-                          <ReadyTile key={e.label} {...e} />
-                        ))}
-                      </div>
-                    </>
-                  )}
-                  {setupEngines.length > 0 && (
-                    <>
-                      <div className={`text-[11.5px] font-medium uppercase tracking-wide text-ink-secondary ${readyEngines.length ? "mt-2" : ""}`}>
-                        Needs setup
-                      </div>
-                      {setupEngines.map((e) => (
-                        <SetupRow key={e.label} {...e} />
-                      ))}
-                    </>
-                  )}
-                </>
-              )}
+    <div className="fixed inset-0 z-50 overflow-auto bg-app p-6 text-ink">
+      <div className="mx-auto grid min-h-full max-w-5xl items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(280px,340px)]">
+        <section className="rounded-2xl border border-hairline/40 bg-panel p-7">
+          <div className="flex items-center gap-3">
+            <img src={`${import.meta.env.BASE_URL}brand/clawd-icon.png`} alt="Clawd" width={56} height={56} className="shrink-0 object-contain" />
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-accent">Clawd 🦞 · Solana</p>
+              <h1 className="text-[22px] font-semibold text-ink">{INTRO_HEADING}</h1>
             </div>
-            <button
-              onClick={() => setStep(capabilities.dictation.available ? 2 : 3)}
-              className="mt-5 w-full shrink-0 rounded-lg bg-accent py-2.5 text-[15px] font-medium text-white"
-            >
-              Continue
-            </button>
           </div>
-        )}
+          <p className="mt-3 text-[14px] leading-relaxed text-ink-secondary">{INTRO_BODY}</p>
 
-        {step === 2 && (
-          <div className="flex flex-col">
-            <h1 className="text-[18px] font-semibold text-ink">Permissions</h1>
-            <p className="mt-1 text-[13.5px] text-ink-secondary">
-              Optional, and only ever used when you ask for the feature.
-            </p>
-            <div className="mt-4 flex flex-col gap-2.5">
-              <div className="flex items-center justify-between gap-3 rounded-xl bg-card p-3.5">
-                <div className="flex items-start gap-3">
-                  <Mic size={18} className="mt-0.5 shrink-0 text-ink-secondary" />
-                  <div>
-                    <div className="text-[14px] font-medium text-ink">Microphone & speech</div>
-                    <div className="mt-0.5 text-[12.5px] text-ink-secondary">
-                      Voice dictation into the composer, transcribed on-device.
-                    </div>
+          <h2 className="mt-6 text-[12px] font-semibold uppercase tracking-[0.12em] text-ink-secondary">Connectors</h2>
+          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+            {statuses.map((row) => {
+              const flash = connectFlash[row.id];
+              const state = flash?.state ?? (row.configured ? (row.keyless ? "ready" : "connected") : "needs-key");
+              return (
+                <button
+                  key={row.id}
+                  type="button"
+                  data-connector={row.id}
+                  onClick={() => onConnect(row.id)}
+                  className="rounded-xl border border-hairline/40 bg-card p-3 text-left hover:border-accent-border"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[14px] font-medium text-ink">{row.label}</span>
+                    <span className="text-[11px] text-accent">{state}</span>
                   </div>
-                </div>
-                {perms?.mic === "granted" ? (
-                  <Check size={16} className="shrink-0 text-[#38d591]" />
-                ) : perms?.mic === "denied" || perms?.mic === "restricted" ? (
-                  <button
-                    onClick={() => window.ogb?.permOpenSettings?.("mic")}
-                    className="shrink-0 rounded-lg bg-raised px-3 py-1.5 text-[13px] text-ink hover:bg-raised-hover"
-                  >
-                    Open Settings
-                  </button>
-                ) : (
-                  <button
-                    onClick={() =>
-                      window.ogb?.permRequestMic?.().then(() => window.ogb?.permStatus?.().then(setPerms))
-                    }
-                    className="shrink-0 rounded-lg bg-raised px-3 py-1.5 text-[13px] text-ink hover:bg-raised-hover"
-                  >
-                    Enable
-                  </button>
-                )}
-              </div>
-              {/* Screen Recording deliberately has no row here: macOS 15+
-                  makes a pre-grant unreliable (per-process status caching,
-                  helper misattribution, periodic re-prompts) — the OS flow
-                  triggers on the first real capture in the Computer panel,
-                  which is the moment the user has context for the dialog. */}
-            </div>
-            <button onClick={() => setStep(3)} className="mt-5 w-full rounded-lg bg-accent py-2.5 text-[15px] font-medium text-white">
-              Continue
-            </button>
-            <button onClick={() => setStep(3)} className="mt-3 text-[12px] text-ink-secondary hover:text-ink">
-              Skip for now
+                  <div className="mt-1 text-[12px] leading-snug text-ink-secondary">{row.tagline}</div>
+                </button>
+              );
+            })}
+          </div>
+
+          <h2 className="mt-6 text-[12px] font-semibold uppercase tracking-[0.12em] text-ink-secondary">Local wallet</h2>
+          <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+            <input
+              value={walletName}
+              onChange={(event) => setWalletName(event.target.value)}
+              placeholder="Wallet name"
+              aria-label="Wallet name"
+              className="min-w-0 flex-1 rounded-lg border border-hairline/40 bg-inset px-3 py-2.5 text-[15px] text-ink placeholder:text-ink-secondary focus:border-accent-border focus:outline-none"
+            />
+            <button
+              type="button"
+              onClick={onCreateWallet}
+              disabled={creating}
+              className="rounded-lg bg-accent px-4 py-2.5 text-[14px] font-semibold text-accent-ink disabled:opacity-40"
+            >
+              {creating ? "Creating…" : "Create wallet"}
             </button>
           </div>
-        )}
+          {walletAddress && (
+            <p data-wallet-address={walletAddress} className="mt-2 break-all font-mono text-[13px] text-accent">
+              {shortAddress(walletAddress)}
+            </p>
+          )}
+          {walletError && (
+            <p data-wallet-error className="mt-2 text-[12.5px] text-danger">
+              {walletError}
+            </p>
+          )}
 
-        {step === 3 && (
-          <PhoneSetupFlow
-            variant="onboarding"
-            profileEmail={email}
-            onSkip={() => {
-              track("phone_setup_skipped");
-              finish();
-            }}
-            onComplete={() => {
-              track("phone_setup_completed");
-              finish();
-            }}
-          />
-        )}
+          <button
+            type="button"
+            onClick={enter}
+            className="mt-6 w-full rounded-lg border border-accent-border bg-raised py-2.5 text-[15px] font-medium text-ink"
+          >
+            Enter {PRODUCT_NAME}
+          </button>
+        </section>
 
+        <aside data-pump-tape className="flex max-h-[calc(100vh-3rem)] flex-col rounded-2xl border border-hairline/40 bg-panel p-5">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-[13px] font-semibold text-ink">Pump.fun tape</h2>
+            <span className="text-[11px] text-accent">{tapeLive ? "live" : "listening"}</span>
+          </div>
+          <p className="mt-1 text-[11.5px] text-ink-secondary">{PUMP_TAPE_HTTP}</p>
+          <button type="button" onClick={() => window.dispatchEvent(new Event("clawd:open-pump-tokens"))} className="mt-3 rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-accent-ink">Explore Pump.fun tokens ↗</button>
+          <button type="button" onClick={() => window.dispatchEvent(new Event("clawd:open-solana"))} className="mt-2 flex items-center justify-center gap-2 rounded-lg border border-hairline/40 px-4 py-2 text-sm text-ink hover:bg-raised"><img src="./brand/solana/logomark.svg" alt="" className="size-4" />Open Solana mode</button>
+          <ol className="mt-3 min-h-[220px] flex-1 space-y-2 overflow-y-auto [scrollbar-width:thin]">
+            {launches.length === 0 ? (
+              <li className="rounded-lg bg-card px-3 py-4 text-[13px] text-ink-secondary">Listening for launches…</li>
+            ) : (
+              launches.map((row) => (
+                <li key={row.signature ?? row.mint ?? row.symbol} className="rounded-lg bg-card px-3 py-2">
+                  <div className="text-[13px] font-medium text-ink">
+                    {row.symbol ?? "???"} <span className="font-normal text-ink-secondary">{row.name ?? ""}</span>
+                  </div>
+                  {row.mint && <div className="font-mono text-[11px] text-accent">{shortAddress(row.mint)}</div>}
+                </li>
+              ))
+            )}
+          </ol>
+        </aside>
       </div>
     </div>
   );

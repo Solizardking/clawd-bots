@@ -1,3 +1,4 @@
+import type { ResearchData } from '../../shared/research';
 // Server-backed store. The React app holds no transports of its own:
 // it dispatches typed commands over HTTP and folds the one SSE event
 // stream from the harness server into local state. The reducer stays
@@ -14,7 +15,7 @@ import {
   type ReactNode,
 } from "react";
 import type { CloudBackend, EffortLevel } from "../../server/contracts.ts";
-import type { MausColor, MausMotion } from "@/lib/mascot";
+import type { ClawdColor, ClawdMotion } from "@/lib/mascot";
 import type { BotAvatarCrop } from "../../shared/bot-avatar";
 import type { Routine, RoutineInput, RoutineRun } from "@/lib/routines";
 import type { WebhookAttempt, WebhookIngressStatus, WebhookTrigger } from "@/lib/webhooks";
@@ -24,7 +25,7 @@ import { speaker } from "@/lib/tts";
 import { createBotPatchQueue, type BotUpdatePatch } from "./bot-patch-queue";
 import { skillRecorderEnabled } from "@/lib/feature-flags";
 
-export type { MausColor } from "@/lib/mascot";
+export type { ClawdColor } from "@/lib/mascot";
 
 export interface OptionCardData {
   title: string;
@@ -68,6 +69,7 @@ export interface SecretRequestCardData {
 }
 
 export interface Message {
+  research?: ResearchData;
   id: string;
   role: "bot" | "user";
   kind: "text" | "options" | "activity" | "screen" | "connector" | "secret";
@@ -91,11 +93,11 @@ export interface Message {
   /** Flat reply reference for an inline quote; unrelated to branch ancestry. */
   replyToId?: string;
   /** rooms: which member said this (sender attribution). */
-  from?: { botId: string; name: string; color: MausColor };
+  from?: { botId: string; name: string; color: ClawdColor };
   /** emoji reactions; by = "user" or a member botId. */
   reactions?: Array<{ emoji: string; by: string }>;
   /** comm chips: "Messaged @X" linking to the bot⇄bot channel. */
-  comm?: { groupId: string; withBotId: string; withName: string; withColor: MausColor };
+  comm?: { groupId: string; withBotId: string; withName: string; withColor: ClawdColor };
   /** sent while the bot was mid-turn; auto-sends when the turn settles.
    * Rendered only while the bot is busy, so a flag stranded by a server
    * restart never shows a promise nothing will keep. */
@@ -176,7 +178,7 @@ export interface Bot {
   title: string;
   description: string;
   notifications: boolean;
-  color: MausColor;
+  color: ClawdColor;
   mascotExpression?: string | null;
   /** App-owned image attachment used for this bot's profile. */
   avatarUrl?: string | null;
@@ -340,6 +342,7 @@ export interface InstanceInfo {
 }
 
 export type AppSettingsSection =
+  | "pets"
   | "general"
   | "connections"
   | "solana"
@@ -384,7 +387,7 @@ export interface AppState {
   mascotMotion: {
     botId: string;
     nonce: number;
-    kind: Exclude<MausMotion, "none">;
+    kind: Exclude<ClawdMotion, "none">;
   } | null;
   /** 1:1 queue-fallback lines waiting for drain; keyed by threadId.
    * Each entry is identified by the server queueId, not by text. */
@@ -528,7 +531,7 @@ function updateBot(state: AppState, botId: string, fn: (b: Bot) => Bot): AppStat
 function withMascotMotion(
   state: AppState,
   botId: string,
-  kind: Exclude<MausMotion, "none">,
+  kind: Exclude<ClawdMotion, "none">,
 ): AppState {
   return {
     ...state,

@@ -9,10 +9,17 @@ export type RoutineSchedule =
   | { type: "once"; at: number }
   | { type: "daily"; time: string; weekdays: number[] };
 
-/** `cloud` runs the agent itself inside the bot's Box VM. `maus` keeps
- * using the provider selected on the MAUS and only borrows its configured
+/** `cloud` runs the agent itself inside the bot's Box VM. `clawd` keeps
+ * using the provider selected on the Clawd and only borrows its configured
  * computer tools, if any. */
-export type RoutineRunOn = "maus" | "cloud";
+export type RoutineRunOn = "clawd" | "cloud";
+
+/** Keep saved schedules and older companion clients compatible. */
+export function normalizeRoutineRunOn(value: unknown): RoutineRunOn {
+  if (value == null || value === "maus" || value === "clawd") return "clawd";
+  if (value === "cloud") return "cloud";
+  throw new Error("Choose where this routine runs");
+}
 
 export type RoutineRunTrigger = "schedule" | "manual" | "webhook";
 
@@ -147,8 +154,8 @@ function sanitizeInput(input: RoutineInput): Omit<Routine, "id" | "createdAt" | 
   if (!name) throw new Error("Give the routine a name");
   if (!prompt) throw new Error("Tell the bot what to do");
   if (!botId) throw new Error("Choose a bot");
-  const runOn = input.runOn ?? "maus";
-  if (runOn !== "maus" && runOn !== "cloud") throw new Error("Choose where this routine runs");
+  const runOn = normalizeRoutineRunOn(input.runOn);
+  if (runOn !== "clawd" && runOn !== "cloud") throw new Error("Choose where this routine runs");
   return {
     name,
     prompt,
@@ -176,10 +183,10 @@ export class RoutineManager {
     try {
       const disk = JSON.parse(readFileSync(this.file, "utf8")) as Partial<RoutineFile>;
       this.routines = Array.isArray(disk.routines)
-        ? disk.routines.map((routine) => ({ ...routine, runOn: routine.runOn ?? "maus" }))
+        ? disk.routines.map((routine) => ({ ...routine, runOn: normalizeRoutineRunOn(routine.runOn) }))
         : [];
       this.runs = Array.isArray(disk.runs)
-        ? disk.runs.map((run) => ({ ...run, runOn: run.runOn ?? "maus" }))
+        ? disk.runs.map((run) => ({ ...run, runOn: normalizeRoutineRunOn(run.runOn) }))
         : [];
     } catch {
       this.routines = [];
@@ -305,7 +312,7 @@ export class RoutineManager {
       run.finishedAt = this.now();
       run.error = "The assigned bot was deleted";
       this.emitRun(run);
-      if (run.threadId) void this.options.interruptTurn?.(run.botId, run.threadId, run.runOn ?? "maus").catch(() => {});
+      if (run.threadId) void this.options.interruptTurn?.(run.botId, run.threadId, normalizeRoutineRunOn(run.runOn)).catch(() => {});
       changed = true;
     }
     if (changed) this.save();
@@ -335,7 +342,7 @@ export class RoutineManager {
     receivedAt: number;
   }): RoutineRun {
     if (this.options.botState(input.botId) === "missing") {
-      throw Object.assign(new Error("The assigned MAUS no longer exists"), { status: 410 });
+      throw Object.assign(new Error("The assigned Clawd no longer exists"), { status: 410 });
     }
     const run: RoutineRun = {
       id: randomUUID(),
@@ -386,7 +393,7 @@ export class RoutineManager {
     run.finishedAt = this.now();
     this.save();
     this.emitRun(run);
-    if (run.threadId) await this.options.interruptTurn?.(run.botId, run.threadId, run.runOn ?? "maus").catch(() => {});
+    if (run.threadId) await this.options.interruptTurn?.(run.botId, run.threadId, normalizeRoutineRunOn(run.runOn)).catch(() => {});
     queueMicrotask(() => void this.tick());
     return { ...run };
   }
@@ -474,7 +481,7 @@ export class RoutineManager {
             run.botId,
             task.threadId,
             prompt,
-            run.runOn ?? "maus",
+            normalizeRoutineRunOn(run.runOn),
             triggerSource,
             (message) => this.failThread(task.threadId, message),
           );
@@ -551,7 +558,7 @@ export class RoutineManager {
       prompt: routine.prompt,
       durationMinutes: routine.durationMinutes,
       botId: routine.botId,
-      runOn: routine.runOn ?? "maus",
+      runOn: normalizeRoutineRunOn(routine.runOn),
       scheduledFor,
       status: "queued",
       manual,

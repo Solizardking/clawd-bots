@@ -135,11 +135,12 @@ export function SolanaSettings() {
   const [assetError, setAssetError] = useState<string | null>(null);
 
   const refreshWallets = useCallback(() => {
+    setWalletError(null);
     void api("/api/solana/wallets")
       .then((body: { local?: LocalWallet[]; phantom?: PhantomWallet[] }) => {
         setWallets({ local: body.local ?? [], phantom: body.phantom ?? [] });
       })
-      .catch(() => {});
+      .catch((e: Error) => setWalletError(e.message));
   }, []);
 
   useEffect(() => {
@@ -165,6 +166,8 @@ export function SolanaSettings() {
     if (!address || loadingAssets) return;
     setLoadingAssets(true);
     setAssetError(null);
+    setAssets([]);
+    setNativeSol(null);
     void api("/api/solana/assets", { method: "POST", body: JSON.stringify({ ownerAddress: address }) })
       .then((body: { items?: AssetItem[]; nativeBalance?: { lamports?: number } }) => {
         setAssets(Array.isArray(body.items) ? body.items : []);
@@ -213,7 +216,7 @@ export function SolanaSettings() {
             Generate
           </button>
         </div>
-        {walletError && <div className="mt-1 text-[12px] text-danger">{walletError}</div>}
+        {walletError && <div role="alert" className="mt-1 text-[12px] text-danger">{walletError} <button className="underline" onClick={refreshWallets}>Retry</button></div>}
         <ul className="mt-3 flex flex-col gap-1.5">
           {rows.length === 0 && <li className="text-[12.5px] text-ink-secondary">No wallets yet.</li>}
           {rows.map((row) => (

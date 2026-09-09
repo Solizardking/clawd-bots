@@ -47,6 +47,7 @@ export function createSolanaRuntime(options?: {
   secrets?: SolanaRuntimeSecrets;
   fetchImpl?: typeof fetch;
   startRelay?: boolean;
+  hostedAccess?: () => { origin: string; token: string } | null;
 }) {
   const env = options?.env ?? process.env;
   const dataDir = options?.dataDir ?? DATA_DIR;
@@ -87,6 +88,8 @@ export function createSolanaRuntime(options?: {
     readRegistry,
     writeRegistry,
     envHeliusKey: fileSecrets.heliusApiKey,
+    envRpcUrl: env.SOLANA_TRACKER_RPC_URL || env.SOLANA_RPC_URL || env.RPC_URL || env.HELIUS_RPC_URL || env.SOLANA_TRACKER_SECURE_RPC || env.SECURE_RPC_URL,
+    hostedAccess: options?.hostedAccess,
     fetchImpl: options?.fetchImpl,
     loadServerSdk: async () => {
       throw new Error("Phantom Server SDK is not installed. Local wallets and Helius still work without it.");

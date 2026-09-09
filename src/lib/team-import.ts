@@ -1,4 +1,5 @@
 import { parse as parseYaml } from "yaml";
+import { normalizeLegacyFormat } from '../../shared/legacy-format';
 
 export interface PendingTeamImport {
   manifest: unknown;
@@ -16,12 +17,13 @@ export interface PendingTeamImport {
 /** Small client-side preview only; the server remains the trust boundary. */
 export function teamImportPreview(manifest: unknown): PendingTeamImport {
   if (typeof manifest === "string") manifest = markdownPackage(manifest);
+  manifest = normalizeLegacyFormat(manifest);
   if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) {
     throw new Error("This file does not contain a team.");
   }
   const root = manifest as Record<string, unknown>;
-  if (root.format === "openmaus.package") return packagePreview(root, manifest);
-  if (root.format !== "openmaus.team") throw new Error("This is not a BotMRR playbook or legacy Clawd team.");
+  if (root.format === "clawd.package") return packagePreview(root, manifest);
+  if (root.format !== "clawd.team") throw new Error("This is not a BotMRR playbook or legacy Clawd team.");
   if (root.version !== 1 && root.version !== 2) throw new Error(`Team file version ${String(root.version)} is not supported.`);
   if (!root.team || typeof root.team !== "object" || Array.isArray(root.team)) {
     throw new Error("This team file is missing its team definition.");
@@ -70,7 +72,7 @@ function markdownPackage(markdown: string): unknown {
   }
   const { botmrr, ...pkg } = metadata as Record<string, unknown>;
   if (botmrr !== 1) throw new Error("This BotMRR Markdown version is not supported.");
-  return { format: "openmaus.package", version: 1, package: pkg };
+  return { format: "clawd.package", version: 1, package: pkg };
 }
 
 function packagePreview(root: Record<string, unknown>, manifest: unknown): PendingTeamImport {

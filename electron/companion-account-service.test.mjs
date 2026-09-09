@@ -104,9 +104,9 @@ function signedCredentials(overrides = {}) {
 }
 
 describe("Companion account service", () => {
-  it("uses the packaged hosted default and only explicit safe development origins", () => {
+  it("requires an explicitly configured companion origin even in a packaged build", () => {
     expect(resolveCompanionControlPlaneURL({ isPackaged: true, environment: {} })).toBe(
-      "https://accounts.clawdbot.com",
+      "",
     );
     expect(resolveCompanionControlPlaneURL({
       isPackaged: false,
@@ -121,6 +121,7 @@ describe("Companion account service", () => {
       environment: { OMB_CONTROL_PLANE_URL: new String("https://accounts.clawdbot.com") },
     })).toBe("");
     expect(resolveCompanionControlPlaneURL({ isPackaged: false, environment: {} })).toBe("");
+    expect(resolveCompanionControlPlaneURL({isPackaged:true,environment:{CLAWD_CONTROL_PLANE_URL:'https://companion.example/'}})).toBe('https://companion.example');
   });
 
   it("does not coerce boxed credential fields into an account", async () => {

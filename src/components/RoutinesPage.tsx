@@ -21,7 +21,7 @@ import {
 import { BotAvatar } from "@/components/Avatar";
 import { WebhooksPanel } from "@/components/WebhooksPanel";
 import { cn } from "@/lib/cn";
-import { MAUS_COLORS, type MausState } from "@/lib/mascot";
+import { CLAWD_COLORS, type ClawdState } from "@/lib/mascot";
 import type { Routine, RoutineInput, RoutineRun, RoutineRunOn, RoutineRunStatus } from "@/lib/routines";
 import { api, useStore, type Bot } from "@/state/store";
 
@@ -97,7 +97,7 @@ function canToggleRoutine(routine: Routine) {
   return routine.schedule.type === "daily" || routine.schedule.at > Date.now();
 }
 
-function statusState(status: RoutineRunStatus): MausState {
+function statusState(status: RoutineRunStatus): ClawdState {
   switch (status) {
     case "queued":
       return "drowsy";
@@ -180,7 +180,7 @@ function projectedItems(routines: Routine[], runs: RoutineRun[], from: number, t
 
 function RoutineCard({ item, bot, compact, onOpen }: { item: CalendarItem; bot: Bot; compact: boolean; onOpen: () => void }) {
   const status = item.run?.status;
-  const color = MAUS_COLORS[bot.color];
+  const color = CLAWD_COLORS[bot.color];
   const title = item.routine?.name ?? item.run?.routineName ?? "Routine";
   const animated = status === "running" || status === "waiting";
   return (
@@ -318,7 +318,7 @@ export function RoutineEditor({
   const [name, setName] = useState(routine?.name ?? "");
   const [prompt, setPrompt] = useState(routine?.prompt ?? "");
   const [botId, setBotId] = useState(lockedBotId ?? routine?.botId ?? bots[0]?.id ?? "");
-  const [runOn, setRunOn] = useState<RoutineRunOn>(routine?.runOn ?? defaultRunOn ?? "maus");
+  const [runOn, setRunOn] = useState<RoutineRunOn>(routine?.runOn ?? defaultRunOn ?? "clawd");
   const [kind, setKind] = useState<"once" | "daily">(routine?.schedule.type ?? "daily");
   const [at, setAt] = useState(
     toInputDateTime(routine?.schedule.type === "once" ? routine.schedule.at : nextHour()),
@@ -382,14 +382,14 @@ export function RoutineEditor({
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
-                onClick={() => setRunOn("maus")}
+                onClick={() => setRunOn("clawd")}
                 className={cn(
                   "rounded-xl border p-3 text-left transition",
-                  runOn === "maus" ? "border-accent/70 bg-accent/10" : "border-hairline/50 bg-inset hover:bg-raised/60",
+                  runOn === "clawd" ? "border-accent/70 bg-accent/10" : "border-hairline/50 bg-inset hover:bg-raised/60",
                 )}
               >
                 <div className="flex items-center gap-2 text-[13px] font-medium text-ink"><Laptop size={15} />This computer</div>
-                <div className="mt-1 text-[11px] leading-relaxed text-ink-secondary">Uses this MAUS's selected model and computer setting.</div>
+                <div className="mt-1 text-[11px] leading-relaxed text-ink-secondary">Uses this Clawd's selected model and computer setting.</div>
               </button>
               <button
                 type="button"
@@ -401,7 +401,7 @@ export function RoutineEditor({
                 )}
               >
                 <div className="flex items-center gap-2 text-[13px] font-medium text-ink"><Cloud size={15} />Cloud VM</div>
-                <div className="mt-1 text-[11px] leading-relaxed text-ink-secondary">Runs the MAUS and its tools inside its Box virtual machine.</div>
+                <div className="mt-1 text-[11px] leading-relaxed text-ink-secondary">Runs the Clawd and its tools inside its Box virtual machine.</div>
               </button>
             </div>
             {runOn === "cloud" && (
@@ -425,7 +425,7 @@ export function RoutineEditor({
             </div>
           </div>
           <label className="block">
-            <span className="mb-1.5 block text-[12px] font-medium text-ink-secondary">What should this MAUS do?</span>
+            <span className="mb-1.5 block text-[12px] font-medium text-ink-secondary">What should this Clawd do?</span>
             <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={6} placeholder="Check the latest project activity, summarize what changed, and call out anything that needs my attention…" className="w-full resize-y rounded-xl border border-hairline/60 bg-inset px-3.5 py-3 text-[14px] leading-relaxed text-ink outline-none placeholder:text-ink-secondary/60 focus:border-accent/70" />
           </label>
           <div>
@@ -494,7 +494,7 @@ function RoutineDetails({ item, bot, onClose, onEdit }: { item: CalendarItem; bo
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-5 backdrop-blur-sm" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <div className="w-full max-w-[520px] overflow-hidden rounded-2xl border border-hairline/60 bg-panel shadow-2xl">
-        <div className="relative overflow-hidden border-b border-hairline/40 px-5 py-5" style={{ background: `linear-gradient(135deg, color-mix(in srgb, ${MAUS_COLORS[bot.color]} 28%, #111), #111)` }}>
+        <div className="relative overflow-hidden border-b border-hairline/40 px-5 py-5" style={{ background: `linear-gradient(135deg, color-mix(in srgb, ${CLAWD_COLORS[bot.color]} 28%, #111), #111)` }}>
           <button onClick={onClose} className="absolute right-3 top-3 rounded-lg p-2 text-white/60 hover:bg-white/10 hover:text-white"><X size={18} /></button>
           <div className="flex items-center gap-4 pr-10">
             <BotAvatar bot={bot} state={run ? statusState(run.status) : "idle"} size={72} animated={run?.status === "running" || run?.status === "waiting"} label={bot.name} />
@@ -513,14 +513,14 @@ function RoutineDetails({ item, bot, onClose, onEdit }: { item: CalendarItem; bo
           {routine && (
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-xl bg-inset p-3"><div className="text-[10px] uppercase tracking-wider text-ink-secondary">Schedule</div><div className="mt-1 text-[13px] text-ink">{scheduleLabel(routine)}</div></div>
-              <div className="rounded-xl bg-inset p-3"><div className="text-[10px] uppercase tracking-wider text-ink-secondary">Runs on</div><div className="mt-1 flex items-center gap-1.5 text-[13px] text-ink">{routine.runOn === "cloud" ? <Cloud size={13} /> : <Laptop size={13} />}{routine.runOn === "cloud" ? "Cloud VM" : "MAUS setup"}</div></div>
+              <div className="rounded-xl bg-inset p-3"><div className="text-[10px] uppercase tracking-wider text-ink-secondary">Runs on</div><div className="mt-1 flex items-center gap-1.5 text-[13px] text-ink">{routine.runOn === "cloud" ? <Cloud size={13} /> : <Laptop size={13} />}{routine.runOn === "cloud" ? "Cloud VM" : "Clawd setup"}</div></div>
               <div className="rounded-xl bg-inset p-3"><div className="text-[10px] uppercase tracking-wider text-ink-secondary">Duration</div><div className="mt-1 text-[13px] text-ink">{routine.durationMinutes} minutes</div></div>
             </div>
           )}
           {run?.triggerSource === "webhook" && (
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-xl bg-inset p-3"><div className="text-[10px] uppercase tracking-wider text-ink-secondary">Triggered by</div><div className="mt-1 flex items-center gap-1.5 text-[13px] text-ink"><Webhook size={13} />Webhook</div></div>
-              <div className="rounded-xl bg-inset p-3"><div className="text-[10px] uppercase tracking-wider text-ink-secondary">Runs on</div><div className="mt-1 flex items-center gap-1.5 text-[13px] text-ink">{run.runOn === "cloud" ? <Cloud size={13} /> : <Laptop size={13} />}{run.runOn === "cloud" ? "Cloud VM" : "MAUS setup"}</div></div>
+              <div className="rounded-xl bg-inset p-3"><div className="text-[10px] uppercase tracking-wider text-ink-secondary">Runs on</div><div className="mt-1 flex items-center gap-1.5 text-[13px] text-ink">{run.runOn === "cloud" ? <Cloud size={13} /> : <Laptop size={13} />}{run.runOn === "cloud" ? "Cloud VM" : "Clawd setup"}</div></div>
               {run.deliveryId && <div className="col-span-2 rounded-xl bg-inset p-3"><div className="text-[10px] uppercase tracking-wider text-ink-secondary">Delivery ID</div><div className="mt-1 truncate font-mono text-[11.5px] text-ink">{run.deliveryId}</div></div>}
             </div>
           )}
@@ -529,7 +529,7 @@ function RoutineDetails({ item, bot, onClose, onEdit }: { item: CalendarItem; bo
           {run?.output && <div><div className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-ink-secondary">Last output</div><div className="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-xl border border-success/20 bg-success/5 px-3.5 py-3 text-[13px] leading-relaxed text-ink">{run.output}</div></div>}
           {run?.error && <div className="flex items-start gap-2 rounded-xl border border-danger/30 bg-danger/10 px-3.5 py-3 text-[13px] text-danger"><CircleAlert size={16} className="mt-0.5 shrink-0" /><span>{run.error}</span></div>}
           {error && <div className="flex items-start gap-2 rounded-xl border border-danger/30 bg-danger/10 px-3.5 py-3 text-[13px] text-danger"><CircleAlert size={16} className="mt-0.5 shrink-0" /><span>{error}</span></div>}
-          {run?.status === "waiting" && <div className="rounded-xl border border-warning/30 bg-warning/10 px-3.5 py-3 text-[13px] text-warning">This MAUS needs your answer. Open its task to continue the run.</div>}
+          {run?.status === "waiting" && <div className="rounded-xl border border-warning/30 bg-warning/10 px-3.5 py-3 text-[13px] text-warning">This Clawd needs your answer. Open its task to continue the run.</div>}
         </div>
         <div className="flex flex-wrap items-center gap-2 border-t border-hairline/40 px-5 py-4">
           {routine && <button disabled={working} onClick={() => void invoke(`/api/routines/${routine.id}/run`)} className="flex items-center gap-2 rounded-xl bg-accent px-3.5 py-2 text-[13px] font-medium text-white hover:brightness-110 disabled:opacity-40"><Play size={14} />Run now</button>}
@@ -560,7 +560,7 @@ function PausedRoutines({ routines, bots, onClose, onEdit }: { routines: Routine
             return (
               <div key={routine.id} className="flex items-center gap-3 rounded-xl border border-hairline/40 bg-inset p-3">
                 {bot ? <BotAvatar bot={bot} state="sleeping" size={44} animated={false} label={bot.name} /> : <div className="flex size-11 items-center justify-center rounded-xl bg-raised text-ink-secondary"><CalendarClock size={20} /></div>}
-                <div className="min-w-0 flex-1"><div className="truncate text-[14px] font-semibold text-ink">{routine.name}</div><div className="mt-0.5 truncate text-[11.5px] text-ink-secondary">{bot?.name ?? "Deleted MAUS"} · {scheduleLabel(routine)}</div></div>
+                <div className="min-w-0 flex-1"><div className="truncate text-[14px] font-semibold text-ink">{routine.name}</div><div className="mt-0.5 truncate text-[11.5px] text-ink-secondary">{bot?.name ?? "Deleted Clawd"} · {scheduleLabel(routine)}</div></div>
                 {bot && <button onClick={() => dispatch({ type: "updateRoutine", routineId: routine.id, patch: { enabled: true } })} className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-medium text-white hover:brightness-110"><Play size={12} />Resume</button>}
                 <button onClick={() => onEdit(routine)} className="rounded-lg px-2 py-1.5 text-[12px] text-ink-secondary hover:bg-raised hover:text-ink">Edit</button>
                 <button onClick={() => { if (!window.confirm(`Delete “${routine.name}”?`)) return; dispatch({ type: "deleteRoutine", routineId: routine.id }); }} className="rounded-lg p-2 text-ink-secondary hover:bg-danger/10 hover:text-danger" title="Delete routine"><Trash2 size={15} /></button>
@@ -657,7 +657,7 @@ export function RoutinesPage() {
             {new Date(rangeStart).toLocaleDateString([], { month: "long", year: "numeric" })}
           </div>
           <select value={botFilter} onChange={(event) => setBotFilter(event.target.value)} className="rounded-xl border border-hairline/50 bg-panel px-3 py-2 text-[12px] text-ink outline-none focus:border-accent/60">
-            <option value="all">All MAUSes</option>
+            <option value="all">All Clawds</option>
             {visibleBots.map((bot) => <option key={bot.id} value={bot.id}>{bot.name}</option>)}
           </select>
           <div className="ml-auto flex rounded-xl bg-panel p-1">
@@ -675,7 +675,7 @@ export function RoutinesPage() {
               {visibleBots.slice(0, 3).map((bot, index) => <div key={bot.id} className="-ml-3 first:ml-0" style={{ transform: `translateY(${Math.abs(index - 1) * 9}px) rotate(${(index - 1) * 5}deg)` }}><BotAvatar bot={bot} state={index === 1 ? "excited" : "idle"} size={84} /></div>)}
               {visibleBots.length === 0 && <CalendarClock size={58} className="text-ink-secondary/40" />}
             </div>
-            <h2 className="text-[18px] font-semibold text-ink">Put your MAUS team on a rhythm</h2>
+            <h2 className="text-[18px] font-semibold text-ink">Put your Clawd team on a rhythm</h2>
             <p className="mt-2 text-[13px] leading-relaxed text-ink-secondary">Plan research briefs, daily check-ins, recurring reviews, or one-time work. Every run becomes a separate task with its own result.</p>
             <button onClick={() => setEditor("new")} disabled={visibleBots.length === 0} className="mt-5 inline-flex items-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-[13px] font-medium text-white hover:brightness-110 disabled:opacity-40"><Plus size={15} />Create your first routine</button>
             {visibleBots.length === 0 && <p className="mt-3 text-[12px] text-warning">Create a bot first, then come back to schedule it.</p>}

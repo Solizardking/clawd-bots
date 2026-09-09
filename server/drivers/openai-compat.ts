@@ -1,3 +1,4 @@
+import { financeContext, recentResearchHistory } from './finance-context.ts';
 // OpenAI-compatible driver — any endpoint that speaks the OpenAI
 // chat-completions shape (OpenRouter, Groq, Together, a local llama.cpp,
 // …). This is the "free models" entry point: point it at OpenRouter's
@@ -19,6 +20,7 @@ import type {
 } from "../contracts.ts";
 import { newEventId, newId } from "../contracts.ts";
 import { appendNative } from "./native.ts";
+import { runHostedChat } from "./hosted-chat.ts";
 
 const DRIVER_KIND = "openai-compat";
 
@@ -39,6 +41,12 @@ export interface OpenAICompatConfig {
   apiKeyEnv: string;
   /** Direct API key if configured */
   key?: string;
+  hostedTavily?: boolean;
+  hostedComposio?: boolean;
+  hostedMarket?: boolean;
+  hostedPump?: boolean;
+  hostedSandbox?: boolean;
+  financeResearch?: boolean;
 }
 
 function decodeConfig(raw: unknown): OpenAICompatConfig {
@@ -53,6 +61,12 @@ function decodeConfig(raw: unknown): OpenAICompatConfig {
           : "https://openrouter.ai/api/v1",
     apiKeyEnv: typeof o.apiKeyEnv === "string" && o.apiKeyEnv ? o.apiKeyEnv : "OPENAI_COMPAT_API_KEY",
     key: typeof o.key === "string" && o.key ? o.key : undefined,
+    hostedTavily: o.hostedTavily === true,
+    hostedComposio: o.hostedComposio === true,
+    hostedMarket: o.hostedMarket === true,
+    hostedPump: o.hostedPump === true,
+    hostedSandbox: o.hostedSandbox === true,
+    financeResearch: o.financeResearch === true,
   };
 }
 
@@ -172,6 +186,9 @@ export const OpenAICompatDriver: ProviderDriver<OpenAICompatConfig> = {
           } catch {
             continue;
           }
+          // Some providers report overload/errors inside an HTTP 200 stream.
+          // Do not turn those into an empty successful conversation turn.
+          if (chunk.error) throw new Error("Provider stream failed; retry later");
           const delta = chunk.choices?.[0]?.delta;
           const contentDelta = typeof delta?.content === "string" ? delta.content : undefined;
           const reasoningDelta = typeof delta?.reasoning_content === "string" ? delta.reasoning_content : undefined;
@@ -191,6 +208,7 @@ export const OpenAICompatDriver: ProviderDriver<OpenAICompatConfig> = {
           }
         }
       }
+      if (!text.trim()) throw new Error("Provider returned no final answer");
       return { text, reasoning, usage };
     };
 
@@ -243,9 +261,12 @@ export const OpenAICompatDriver: ProviderDriver<OpenAICompatConfig> = {
       const abort = new AbortController();
       active.set(threadId, { abort, turnId });
 
+      const researchEnabled = config.financeResearch || config.hostedTavily || config.hostedComposio || config.hostedMarket;
+      const history = researchEnabled ? recentResearchHistory(turn.transcript ?? []) : turn.transcript ?? [];
       const messages = [
+        ...(researchEnabled ? [{ role: "system", content: financeContext() }] : []),
         ...(turn.system ? [{ role: "system", content: turn.system }] : []),
-        ...(turn.transcript ?? []).map((m) => ({
+        ...history.map((m) => ({
           role: m.role === "assistant" ? "assistant" : "user",
           content: m.text,
         })),
@@ -269,7 +290,11 @@ export const OpenAICompatDriver: ProviderDriver<OpenAICompatConfig> = {
 
       (async () => {
         try {
-          const { text, reasoning, usage } = await complete(
+          const { text, reasoning, usage } = (config.hostedTavily || config.hostedComposio || config.hostedMarket || config.hostedPump) ? await runHostedChat({
+            baseUrl:config.url,key:apiKey,composio:config.hostedComposio,market:config.hostedMarket,pump:config.hostedPump,sandbox:config.hostedSandbox,web:config.hostedTavily,model:turn.model||catalog.default,messages,signal:abort.signal,
+            onDelta:(delta,streamKind)=>emit({...base(threadId,turnId),type:'content.delta',streamKind,delta}),
+            onTool:(name,state,itemId,research)=>emit(state==='start'?{...base(threadId,turnId),type:'item.started',itemType:'tool',title:name,itemId}:{...base(threadId,turnId),type:'item.completed',itemType:'tool',itemId,ok:state==='done',research}),
+          }) : await complete(
             messages,
             turn.model || catalog.default,
             {

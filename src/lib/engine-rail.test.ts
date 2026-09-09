@@ -3,6 +3,10 @@ import { describe, expect, it } from "vitest";
 import { splitEngineRail } from "./engine-rail";
 
 describe("splitEngineRail", () => {
+  it("shows compatible HTTP model catalogs in the cloud group", () => {
+    const engine = { access: "custom", driverKind: "openai-compat", instanceId: "novita" };
+    expect(splitEngineRail([engine])).toEqual({ subscription: [engine], custom: [] });
+  });
   it("keeps Cloud engines above Local engines", () => {
     const { subscription, custom } = splitEngineRail([
       { access: "subscription", instanceId: "claude" },

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -81,7 +82,9 @@ describe("connected-apps broker boundaries", () => {
   });
 
   it("hashes installation tokens before storage", async () => {
-    await expect(sha256("clawdbot")).resolves.toBe("63c74f70a9d4681c334e84001935955a75245ea5b16b9c37c808e85c69963705");
+    const token = "clawdbot-install-token";
+    const expected = createHash("sha256").update(token).digest("hex");
+    await expect(sha256(token)).resolves.toBe(expected);
   });
 
   it("creates Sessions with explicit multi-account selection", async () => {

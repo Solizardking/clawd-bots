@@ -1,3 +1,6 @@
+import { hostedDesktopRequest } from "./hosted-desktop.ts";
+import { HOSTED_DESKTOP_MUTATIONS, HOSTED_DESKTOP_TOOLS, type HostedDesktopAction } from "../shared/hosted-desktop.ts";
+import { fetchResearch, researchContext, researchCaption } from './research.ts';
 // Clawd Bot server — the harness host. Clients hold no transports
 // (upstream rule): the React app dispatches typed commands over HTTP and
 // folds one SSE event stream; every provider process runs here.
@@ -165,6 +168,15 @@ const MIME: Record<string, string> = {
 ensureDirs();
 const cfg = loadConfig();
 const solanaRuntime = createSolanaRuntime({
+  hostedAccess: () => {
+    const settings = loadConfig().openaiCompat;
+    if (!settings?.url || !settings.key) return null;
+    try {
+      const url = new URL(settings.url);
+      if (url.protocol !== "https:" || !/^\/(openrouter|novita|xai|nvidia)\/v1\/?$/.test(url.pathname) || url.username || url.password || url.search || url.hash) return null;
+      return { origin: url.origin, token: settings.key };
+    } catch { return null; }
+  },
   secrets: {
     heliusApiKey: cfg.solana?.heliusApiKey,
     phantomOrganizationId: cfg.solana?.phantomOrganizationId,
@@ -335,7 +347,16 @@ async function defaultSelection() {
 }
 let bootSelection = { instanceId: "", model: "" };
 const store = new Store(() => bootSelection);
-bootSelection = await defaultSelection();
+if (store.bots.length || STATIC_DIR) {
+  // Existing bots retain their selection. Packaged/static first launches
+  // must also serve setup immediately while optional CLI discovery runs.
+  // The empty initial selection honestly asks the user to choose an engine.
+  void defaultSelection().then((selection) => { bootSelection = selection; }).catch((error) => {
+    console.error("[startup] default model discovery failed:", error.message);
+  });
+} else {
+  bootSelection = await defaultSelection();
+}
 store.seedIfEmpty();
 
 /** A bot as a client may see it: no provider session bookkeeping.
@@ -677,6 +698,7 @@ const watchdog = new TurnWatchdog({
       const currentBot = store.bot(turn.botId);
       if (currentBot?.busy) {
         stopScreenPoller(currentBot.id);
+        clearE2bTurn(currentBot.id, turn.threadId);
         if (activeVpsThreads.get(currentBot.id) === turn.threadId) activeVpsThreads.delete(currentBot.id);
         store.setActivity(currentBot.id, "idle");
         // The grace fallback replaces a missing turn.completed event. Release
@@ -745,6 +767,15 @@ let localVmImageBusy = false;
 let localVmProvisionBusy = false;
 let localVmModeChangeBusy = false;
 const activeVpsThreads = new Map<string, string>();
+const activeE2bThreads = new Map<string, string>();
+const hostedDesktopActions = new Set<string>();
+function clearE2bTurn(botId: string, threadId: string) { if (activeE2bThreads.get(botId) === threadId) activeE2bThreads.delete(botId); }
+async function runHostedDesktop(botId: string, action: HostedDesktopAction, args: Record<string, unknown> = {}) {
+  if (hostedDesktopActions.has(botId)) throw Object.assign(new Error("A hosted desktop action is still running"), { status: 409 });
+  hostedDesktopActions.add(botId);
+  try { return await hostedDesktopRequest(cfg, botId, action, args); }
+  finally { hostedDesktopActions.delete(botId); }
+}
 // A restore mutates and cleans a project work tree. Claim the bot across the
 // entire async Git operation so a turn cannot start in that folder midway.
 const checkpointRestoreLeases = new Set<string>();
@@ -838,6 +869,7 @@ bus.subscribe((event: RuntimeEvent) => {
         // just that something ended
         lastReply.set(event.threadId, event.text);
       } else if (event.itemType === "tool" && event.itemId) {
+        if (event.ok && event.research) pushMessage({ role: "bot", kind: "text", text: researchCaption(event.research), research: event.research });
         const itemKey = `${event.threadId}:${event.itemId}`;
         const messageId = toolMessageByItem.get(itemKey);
         let toolName = "tool";
@@ -1065,6 +1097,7 @@ bus.subscribe((event: RuntimeEvent) => {
       // tally is not the right home for a shared room's spend, so only
       // 1:1 task turns are tallied for now.
       if (bot) {
+        clearE2bTurn(bot.id, event.threadId);
         const vpsTurn = activeVpsThreads.get(bot.id) === event.threadId;
         const clearVpsTurn = () => {
           if (activeVpsThreads.get(bot.id) === event.threadId) activeVpsThreads.delete(bot.id);
@@ -1390,7 +1423,7 @@ async function startTurn(
     /** Routines run in detached tasks; pin the destination for the whole turn. */
     threadId?: string;
     /** Cloud routines run the whole agent inside the bot's Box VM instead
-     * of merely mounting that VM's computer tools on the MAUS's provider. */
+     * of merely mounting that VM's computer tools on the Clawd's provider. */
     runOn?: RoutineRunOn;
     /** Lets the system prompt put externally supplied payloads behind an
      * explicit untrusted-data boundary without changing ordinary chat. */
@@ -1473,7 +1506,7 @@ async function startTurn(
     .slice(-40)
     .map((m) => ({
       role: m.role === "user" ? ("user" as const) : ("assistant" as const),
-      text: transcriptText(m, messagesById, cfg.profile?.name?.trim() || "User"),
+      text: m.research ? researchContext(m.research) : transcriptText(m, messagesById, cfg.profile?.name?.trim() || "User"),
     }));
 
   // After a rewind (edit / branch switch) the provider's native session
@@ -1496,7 +1529,9 @@ async function startTurn(
     transcript,
     rewound,
     fresh,
-    replaysNatively: instance.driverKind === "grok",
+    // API chat drivers already receive settled history through `transcript`.
+    // Replaying it inside `text` also turns old tool requests into new input.
+    replaysNatively: instance.driverKind === "grok" || instance.driverKind === "openai-compat",
   });
 
   const persona = [
@@ -1568,15 +1603,15 @@ async function startTurn(
       // tools that would fail on every call or spawn an unnecessary proxy.
       const dwebUrl = process.env.DWEB_URL?.trim();
       if (dwebUrl) integrations.dweb = { url: dwebUrl };
-      const wants = opts?.runOn === "cloud" ? "cloud" : bot.computer; // cloud routine overrides the MAUS default
+      const wants = opts?.runOn === "cloud" ? "cloud" : bot.computer; // cloud routine overrides the Clawd default
       // Cloud routines always use Box/BoxAgent. The per-bot backend applies
       // only to ordinary turns that mount a computer into the local agent.
-      const cloudBackend = opts?.runOn === "cloud" || bot.cloudBackend !== "vps" ? "box" : "vps";
+      const cloudBackend = opts?.runOn === "cloud" ? "box" : bot.cloudBackend ?? "box";
       const mountsComputerMcp = instance.adapter.capabilities.computerMcp === true;
       const mountsCloudComputer = mountsComputerMcp || instance.driverKind === "boxAgent";
       const mountsLocalComputer = instance.adapter.capabilities.localComputerMcp === true;
       let previewCapture: (() => Promise<{ png: string; format: string }>) | null = null;
-      let computerKind: "box" | "vps" | "vm" | "local" | null = null;
+      let computerKind: "box" | "vps" | "e2b" | "vm" | "local" | null = null;
       let autoVpsProblem: string | null = null;
 
       // Explicit destinations are strict. In particular, Local VM must never
@@ -1620,6 +1655,19 @@ async function startTurn(
         if (!cua) throw new Error("CUA Driver is not ready for this computer — check permissions and restart Clawd Bot");
         integrations.localComputer = cua;
         computerKind = "local";
+      }
+
+      if ((wants === "cloud" || wants === undefined) && cloudBackend === "e2b") {
+        if (!mountsComputerMcp || instance.driverKind === "boxAgent") throw new Error("E2B agent control requires Claude or a compatible ACP engine. You can still drive the hosted desktop from its panel.");
+        activeE2bThreads.set(bot.id, threadId);
+        const desktop = await runHostedDesktop(bot.id, wants === "cloud" ? "status" : "inspect");
+        if (desktop.state !== "ready") throw new Error(desktop.state === "in_use" ? "This account's hosted desktop is being used by another bot" : "Start the E2B desktop in the Computer panel, or choose Cloud for this bot");
+        integrations.localComputer = { command: process.execPath, args: [SPAWNED_PROXIES.hostedDesktop], env: {
+          ...AGENTS_NODE_FLAG,
+          OMB_E2B_URL: `http://127.0.0.1:${PORT}/api/internal/hosted-desktop?botId=${encodeURIComponent(bot.id)}`,
+          OMB_COMMS_TOKEN: COMMS_TOKEN,
+        }, platform: "linux" };
+        computerKind = "e2b";
       }
 
       // A VPS is a local-agent computer mount, never a remote agent runner.
@@ -1789,6 +1837,8 @@ async function startTurn(
               : " You have a shared, isolated Cua sandbox: a Linux desktop in a container on this machine. Only /home/cua/workspace is durable; save downloads, repositories, working files, and browser profiles there because everything else inside the VM is disposable. No other host folder is mounted. Use the computer tools for desktop, accessibility, window, and shell work. Inspect the desktop state before acting, prefer accessibility targets over raw coordinates, and work carefully."
             : computerKind === "box" && instance.driverKind !== "boxAgent"
             ? " You have your own cloud computer. In Chrome, prefer browser_snapshot with browser_click/browser_fill for semantic, trusted actions; use screenshot/click/type_text for visual or non-browser UI, open_url for navigation, and computer_exec for Linux tasks. Every action already returns the resulting screen, so don't follow it with screenshot; batch predictable pixel actions with computer_batch."
+            : computerKind === "e2b"
+              ? " You have a private hosted E2B Linux desktop reserved for this bot. It expires after 15 minutes and its files are disposable. Use e2b_screenshot before acting; mouse and keyboard tools return the resulting screen. Use e2b_command only for work inside that Linux sandbox. Never claim to be controlling the user\'s Mac. If the user takes control, wait for them to hand it back. Do not enter passwords or one-time codes; ask the user to complete protected input in the visible Computer panel."
             : computerKind === "vps"
               ? " You have your own self-hosted remote Linux computer through the official Cua tools. Its filesystem is disposable: everything on it is wiped whenever its container is recreated, so keep long-lived work somewhere durable — push it to a remote, or hand the results back in chat — instead of leaving it only on that computer. Inspect the desktop state before acting, prefer accessibility targets over raw coordinates, and act carefully."
               : computerKind === "local"
@@ -1835,6 +1885,7 @@ async function startTurn(
       }
     } catch (e) {
       releaseLocalVmThread(threadId);
+      clearE2bTurn(bot.id, threadId);
       if (activeVpsThreads.get(bot.id) === threadId) activeVpsThreads.delete(bot.id);
       watchdog.settle(threadId);
       turnUsage.delete(threadId);
@@ -1892,7 +1943,7 @@ routines.start();
 
 // Webhook definitions are independent from calendar schedules, but every
 // delivery joins the same RoutineManager queue. That keeps unattended work
-// ordered behind a busy MAUS and gives webhook runs the same durable receipts.
+// ordered behind a busy Clawd and gives webhook runs the same durable receipts.
 const webhooks = new WebhookManager({
   emit: broadcast,
   botState: (botId) => {
@@ -3033,6 +3084,19 @@ const server = createServer(async (req, res) => {
         res.writeHead(upstream.status, headers);
         return res.end(Buffer.from(upstream.bytes));
       }
+      if (path === "/api/internal/hosted-desktop" && method === "POST") {
+        const botId = url.searchParams.get("botId") ?? "";
+        const bot = store.bot(botId);
+        if (!bot || bot.cloudBackend !== "e2b" || !activeE2bThreads.has(botId)) return json(res, 403, { error: "No active E2B turn for this bot" });
+        if (computerControl.snapshot(botId).held) return json(res, 409, { error: "The user is driving. Wait for them to release control." });
+        const body = await readBody(req);
+        const action = body.action as HostedDesktopAction;
+        if (!HOSTED_DESKTOP_TOOLS.some(tool => tool.action === action)) return json(res, 400, { error: "Unsupported agent desktop action" });
+        const result = await runHostedDesktop(botId, action, body.args ?? {});
+        if (computerControl.snapshot(botId).held) return json(res, 409, { error: "The user has taken control. Wait for them to release it." });
+        const frame = action === "screenshot" ? result : await runHostedDesktop(botId, "screenshot");
+        return json(res, 200, { result: action === "screenshot" ? { observed: true } : result, png: frame.png });
+      }
       // ── computer control: proxies read the hold, bots plead for help ──
       if (path === "/api/internal/computer-control") {
         const botId = url.searchParams.get("botId") ?? "";
@@ -4124,8 +4188,12 @@ const server = createServer(async (req, res) => {
       ) {
         return json(res, 400, { error: "computer must be cloud, vm, local, or off" });
       }
-      if (body.cloudBackend !== undefined && !["box", "vps"].includes(String(body.cloudBackend))) {
-        return json(res, 400, { error: "cloudBackend must be box or vps" });
+      if (body.cloudBackend !== undefined && !["box", "vps", "e2b"].includes(String(body.cloudBackend))) {
+        return json(res, 400, { error: "cloudBackend must be box, vps, or e2b" });
+      }
+      if (existingBot?.cloudBackend === "e2b" && ((body.cloudBackend !== undefined && body.cloudBackend !== "e2b") || (body.computer !== undefined && body.computer !== existingBot.computer))) {
+        const desktop = await runHostedDesktop(existingBot.id, "inspect");
+        if (desktop.state === "ready" || desktop.state === "pending") return json(res, 409, { error: "Stop this bot's E2B desktop before changing its computer destination" });
       }
       if (body.autoStartVps !== undefined) {
         if (typeof body.autoStartVps !== "boolean") return json(res, 400, { error: "autoStartVps must be true or false" });
@@ -4135,7 +4203,7 @@ const server = createServer(async (req, res) => {
         return json(res, 400, { error: "chiefOfStaff must be true or false" });
       }
       if (body.cloudBackend !== undefined) {
-        const backendError = cloudBackendChangeError(Boolean(existingBot?.busy), activeVpsThreads.has(m[1]));
+        const backendError = cloudBackendChangeError(Boolean(existingBot?.busy), activeVpsThreads.has(m[1]) || activeE2bThreads.has(m[1]) || hostedDesktopActions.has(m[1]));
         if (backendError) return json(res, 409, { error: backendError });
       }
       if (body.cwd !== undefined) {
@@ -4423,6 +4491,20 @@ const server = createServer(async (req, res) => {
       }
       if (!result.ok) return json(res, 400, { error: result.error });
       return json(res, 200, { ok: true });
+    }
+
+    m = path.match(/^\/api\/bots\/([\w-]+)\/research$/);
+    if (m && method === "POST") {
+      const bot = store.bot(m[1]);
+      if (!bot) return json(res, 404, { error: "no such bot" });
+      if (bot.busy) return json(res, 409, { error: "Wait for the current reply before adding research" });
+      const threadId = bot.threadId;
+      const data = await fetchResearch(loadConfig(), await readBody(req));
+      if (data.kind === "tokens") return json(res, 200, data);
+      const current = store.bot(bot.id);
+      if (!current || current.threadId !== threadId || current.busy) return json(res, 409, { error: "The conversation changed; run this research again" });
+      const message = store.appendMessage(threadId, { role: "bot", kind: "text", text: researchCaption(data), research: data });
+      return json(res, 200, { message });
     }
 
     // onboarding/ask cards persist their answered/dismissed state
@@ -5227,11 +5309,31 @@ const server = createServer(async (req, res) => {
       return json(res, 405, { error: "method not allowed" });
     }
 
+    m = path.match(/^\/api\/bots\/([\w-]+)\/hosted-computer$/);
+    if (m) {
+      const bot = store.bot(m[1]);
+      if (!bot) return json(res, 404, { error: "No such bot" });
+      if (bot.cloudBackend !== "e2b") return json(res, 409, { error: "Select E2B as this bot's cloud backend" });
+      if (method === "GET") return json(res, 200, await runHostedDesktop(bot.id, "inspect"));
+      if (method !== "POST") return json(res, 405, { error: "Method not allowed" });
+      if (!String(req.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) return json(res, 415, { error: "Expected application/json" });
+      const body = await readBody(req);
+      const action = body.action as HostedDesktopAction;
+      if (action === "status" || action === "stop") {
+        if (bot.busy || activeE2bThreads.has(bot.id)) return json(res, 409, { error: "Interrupt the bot before starting or stopping its desktop" });
+        if (action === "status" && bot.computer && bot.computer !== "cloud") return json(res, 409, { error: "Enable Cloud before starting this desktop" });
+      } else if (HOSTED_DESKTOP_MUTATIONS.has(action) && !computerControl.snapshot(bot.id).held) {
+        return json(res, 409, { error: "Take control before using the desktop" });
+      }
+      return json(res, 200, await runHostedDesktop(bot.id, action, body.args ?? {}));
+    }
+
     // ── the bot's cloud computer (Box) ──
     m = path.match(/^\/api\/bots\/([\w-]+)\/computer$/);
     if (m && method === "GET") {
       const bot = store.bot(m[1]);
       if (!bot) return json(res, 404, { error: "no such bot" });
+      if (bot.cloudBackend === "e2b") return json(res, 200, { backend: "e2b", ...(await runHostedDesktop(bot.id, "inspect")) });
       return bot.cloudBackend === "vps"
         ? json(res, 200, { backend: "vps", ...(await vps.vpsComputerStatus(cfg, bot.id)) })
         : json(res, 200, { backend: "box", ...(await box.boxStatus(cfg, bot.id)) });
@@ -5252,6 +5354,7 @@ const server = createServer(async (req, res) => {
         }
         const body = await readBody(req);
         const action = String(body.action ?? "");
+        if (action === "take" && bot.cloudBackend === "e2b" && hostedDesktopActions.has(bot.id)) return json(res, 409, { error: "Wait for the current desktop action to finish, then take control" });
         if (action === "take") return json(res, 200, computerControl.take(bot.id));
         if (action === "release") return json(res, 200, computerControl.release(bot.id));
         if (action === "dismiss-help") return json(res, 200, computerControl.dismissHelp(bot.id));
@@ -5281,6 +5384,7 @@ const server = createServer(async (req, res) => {
       if (!String(req.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) {
         return json(res, 415, { error: "content-type must be application/json" });
       }
+      if (bot.cloudBackend === "e2b") return json(res, 409, { error: "Use the E2B Computer panel for hosted desktop actions" });
       if (bot.cloudBackend === "vps") {
         if (m[2] === "exec") {
           return json(res, 409, { error: "the VPS console is available to the bot through its scoped computer tools" });

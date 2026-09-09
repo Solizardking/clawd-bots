@@ -68,7 +68,8 @@ beforeAll(async () => {
   home = mkdtempSync(join(tmpdir(), "omb-api-test-"));
   staticDir = join(home, "static");
   fakeClaudeDump = join(home, "fake-claude-dump.json");
-  // a fleet of exactly one unknown driver: no CLI probes, no network
+  // Use a custom instance id: the reserved claude/grok/codex ids opt into
+  // product-fleet additions and would probe real CLIs installed on this machine.
   mkdirSync(join(home, ".clawdbot"), { recursive: true });
   mkdirSync(join(staticDir, "assets"), { recursive: true });
   writeFileSync(join(staticDir, "index.html"), "<!doctype html><title>Packaged Clawd Bot</title>");
@@ -78,7 +79,7 @@ beforeAll(async () => {
     JSON.stringify({
       instances: {
         ghost: { driver: "not-a-real-driver", displayName: "Ghost" },
-        claude: { driver: "claudeAgent", displayName: "Fixture Claude", config: { cli: FAKE_CLAUDE_CLI } },
+        fixtureClaude: { driver: "claudeAgent", displayName: "Fixture Claude", config: { cli: FAKE_CLAUDE_CLI } },
       },
     }),
   );
@@ -501,7 +502,7 @@ describe("harness HTTP API", () => {
     });
     expect(ghost.snapshot.reason).toContain("not-a-real-driver");
     expect(body.instances).toContainEqual(expect.objectContaining({
-      instanceId: "claude",
+      instanceId: "fixtureClaude",
       driverKind: "claudeAgent",
       displayName: "Fixture Claude",
     }));
@@ -956,7 +957,7 @@ describe("harness HTTP API", () => {
       .map((bot: { name: string }) => bot.name);
     const exported = await api("POST", "/api/teams/export", { name: "Field Team" });
     expect(exported.status).toBe(200);
-    expect(exported.body).toMatchObject({ format: "openmaus.team", version: 2, team: { name: "Field Team" } });
+    expect(exported.body).toMatchObject({ format: "clawd.team", version: 2, team: { name: "Field Team" } });
     expect(exported.body.team.members.map((member: { name: string }) => member.name)).toEqual(visibleNames);
     expect(exported.body.team.members).toEqual(expect.arrayContaining([
       expect.objectContaining({ key: "mira", name: "Mira", title: "Project Lead", appearance: { color: "purple", mascotExpression: "focused" } }),
@@ -1099,7 +1100,7 @@ describe("harness HTTP API", () => {
 
   it("installs a complete bot package with a Chief, room, playbook, connector intent, and paused routine", async () => {
     const packageFile = {
-      format: "openmaus.package",
+      format: "clawd.package",
       version: 1,
       package: {
         id: "signal-desk",
@@ -1147,7 +1148,7 @@ describe("harness HTTP API", () => {
           name: "Morning signals",
           agent: "scout",
           prompt: "Prepare the approved morning signal brief.",
-          runOn: "maus",
+          runOn: "clawd",
           schedule: { type: "daily", time: "09:00", weekdays: [1, 2, 3, 4, 5] },
           durationMinutes: 30,
           enabledAfterInstall: false,
@@ -1262,7 +1263,7 @@ describe("harness HTTP API", () => {
     const room = (await api("POST", "/api/groups", { memberIds: [trusted.id], name: "War Room" })).body.group;
 
     const smuggled = {
-      format: "openmaus.team",
+      format: "clawd.team",
       version: 2,
       team: {
         name: "Trap Team",
@@ -1332,7 +1333,7 @@ describe("harness HTTP API", () => {
     // a legacy v1 file carries a room block; import ignores it entirely —
     // it neither creates a room nor touches the existing one sharing its name
     const legacy = await api("POST", "/api/teams/import", {
-      format: "openmaus.team",
+      format: "clawd.team",
       version: 1,
       team: {
         name: "Trap Team Legacy",
@@ -1735,7 +1736,7 @@ describe("harness HTTP API", () => {
     expect(ready.status).toBe(200);
     try {
       const selected = await api("PATCH", `/api/bots/${botId}`, {
-        modelSelection: { instanceId: "claude", model: "claude-sonnet-5" },
+        modelSelection: { instanceId: "fixtureClaude", model: "claude-sonnet-5" },
       });
       expect(selected.status).toBe(200);
 
@@ -1849,7 +1850,7 @@ describe("harness HTTP API", () => {
       name: "Incoming build",
       prompt: "Review the incoming build event",
       botId: bots.body.bots[0].id,
-      runOn: "maus",
+      runOn: "clawd",
     });
     expect(created.status).toBe(201);
     expect(created.body.ingress).toMatchObject({ available: true, baseUrl: WEBHOOK_BASE });

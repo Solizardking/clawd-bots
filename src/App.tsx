@@ -1,3 +1,4 @@
+import { PumpTokensPanel } from "@/components/PumpTokensPanel";
 import { useEffect, useRef, useState } from "react";
 import { Loader2, Menu } from "lucide-react";
 import { StoreProvider, useStore } from "@/state/store";
@@ -20,7 +21,9 @@ import { CommandPalette } from "@/components/CommandPalette";
 import { SkillRecorderPage } from "@/components/SkillRecorderPage";
 import { TeamMapPage } from "@/components/TeamMapPage";
 
-function Shell() {
+import { PetCompanion } from "@/components/Pets";
+
+function Shell({ gated }: { gated: boolean }) {
   const { state, dispatch } = useStore();
   const unreadCount = unreadConversationCount(state.bots, state.groups);
   // Mobile-only drawer state. Above md, none of these properties are emitted
@@ -179,7 +182,9 @@ function Shell() {
       {/* mounted after the modals: same z-50 tier, so DOM order keeps the
           palette on top when one of them is open underneath */}
       <CommandPalette />
+      <PumpTokensPanel overlay={gated} />
       </div>
+      <PetCompanion />
     </div>
   );
 }
@@ -192,7 +197,7 @@ export default function App() {
   return (
     <DesktopCapabilitiesProvider>
       <StoreProvider>
-        <Shell />
+        <Shell gated={gated} />
         {gated && <Onboarding onDone={() => setGated(false)} />}
       </StoreProvider>
     </DesktopCapabilitiesProvider>

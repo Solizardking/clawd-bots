@@ -1,4 +1,4 @@
-name: ${COMPOSE_PROJECT_NAME:-openmausbot-podman}
+name: ${COMPOSE_PROJECT_NAME:-clawd-bot-podman}
 services:
   omb:
     build:
@@ -6,7 +6,7 @@ services:
       dockerfile: deploy/podman/Containerfile
       args:
         ENGINES: ${ENGINES:-}
-    image: localhost/openmausbot-podman:${OMB_IMAGE_TAG:-local}
+    image: localhost/clawd-bot-podman:${OMB_IMAGE_TAG:-local}
     init: true
     userns_mode: keep-id:uid=1001,gid=1001
     user: "1001:1001"
@@ -20,14 +20,15 @@ services:
     environment:
       HOME: ${OMB_DATA_ROOT}
       OMB_DATA_DIR: ${OMB_DATA_ROOT}/.openmausbot
-      OMB_STATIC_DIR: /app/dist
+      OMB_STATIC_DIR: /app/dist-ui
+      COMPOSIO_API_KEY: ${COMPOSIO_API_KEY:-}
       CONTAINER_HOST: unix:///run/omb-podman.sock
       OMB_PORT: ${OMB_PORT:-8799}
       OMB_WEBHOOK_PORT: ${OMB_WEBHOOK_PORT:-8800}
       OMB_PUBLIC_URL: ${OMB_PUBLIC_URL:-http://localhost:8080}
       OMB_WEBHOOK_PUBLIC_URL: ${OMB_PUBLIC_URL:-http://localhost:8080}
     healthcheck:
-      test: [CMD-SHELL, 'curl -fsS http://127.0.0.1:$$OMB_PORT/api/health | grep -q openmausbot']
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:'+process.env.OMB_PORT+'/api/health').then(async r=>{if(!r.ok||(await r.json()).app!=='clawdbot')process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 15s
       timeout: 5s
       start_period: 30s

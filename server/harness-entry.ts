@@ -7,8 +7,10 @@ import { homedir } from "node:os";
 import { join, resolve as resolvePath } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { connectConnector, CONNECTOR_IDS, listConnectorStatuses, secretsFromEnv, type ConnectorId } from "../shared/connectors.ts";
 import { PRODUCT_ID, PRODUCT_NAME } from "../shared/product.ts";
 import { createLocalSolanaWalletStore } from "./solana/local-wallets.ts";
+import { createPumpTapeStore, parsePumpMessage } from "./solana/pump-tape.ts";
 import {
   executeSolanaRoutedTool,
   isSolanaRoutedTool,
@@ -17,35 +19,52 @@ import {
 import { createSolanaService } from "./solana/solana-service.ts";
 
 const PORT = Number(process.env.CLAWD_PORT || process.env.OMB_PORT || process.env.OGB_PORT || 8799);
-const DATA_DIR = process.env.CLAWD_DATA_DIR || process.env.OMB_DATA_DIR || join(homedir(), ".clawdbot");
 
-const registry = { schemaVersion: 1, wallets: [] as unknown[] };
+function dataDir(): string {
+  return process.env.CLAWD_DATA_DIR || process.env.OMB_DATA_DIR || join(homedir(), ".clawdbot");
+}
 
-const solana = createSolanaService({
-  revealSecret: async () => null,
-  readRegistry: async () => registry,
-  writeRegistry: async (value) => {
-    const next = value as { wallets?: unknown[] };
-    registry.wallets = Array.isArray(next.wallets) ? next.wallets : [];
-  },
-  loadServerSdk: async () => ({
-    ServerSDK: class {
-      async createWallet() {
-        throw new Error("Phantom is not configured in the production harness.");
-      }
+const connectorSecrets = () => secretsFromEnv(process.env);
+
+function createRuntime() {
+  const registry = { schemaVersion: 1, wallets: [] as unknown[] };
+  const solana = createSolanaService({
+    envRpcUrl: process.env.SOLANA_TRACKER_RPC_URL || process.env.SOLANA_RPC_URL || process.env.RPC_URL || process.env.HELIUS_RPC_URL,
+    revealSecret: async () => null,
+    readRegistry: async () => registry,
+    writeRegistry: async (value) => {
+      const next = value as { wallets?: unknown[] };
+      registry.wallets = Array.isArray(next.wallets) ? next.wallets : [];
     },
-  }),
-});
-
-const localWallets = createLocalSolanaWalletStore({
-  storePath: join(DATA_DIR, "solana-wallets.json"),
-  safeStorage: {
-    isEncryptionAvailable: () => true,
-    encryptString: (plainText) => Buffer.from(plainText, "utf8"),
-    decryptString: (encrypted) => encrypted.toString("utf8"),
-  },
-  randomSeed: () => randomBytes(32),
-});
+    loadServerSdk: async () => ({
+      ServerSDK: class {
+        async createWallet() {
+          throw new Error("Phantom is not configured in the production harness.");
+        }
+      },
+    }),
+  });
+  const tapeStore = createPumpTapeStore();
+  const localWallets = createLocalSolanaWalletStore({
+    storePath: join(dataDir(), "solana-wallets.json"),
+    safeStorage: {
+      isEncryptionAvailable: () => true,
+      encryptString: (plainText) => Buffer.from(plainText, "utf8"),
+      decryptString: (encrypted) => encrypted.toString("utf8"),
+    },
+    randomSeed: () => randomBytes(32),
+  });
+  const solanaPort = {
+    listWallets: () => solana.listWallets(),
+    getWalletAssets: (raw: unknown) => solana.getWalletAssets(raw),
+    getAsset: (raw: unknown) => solana.getAsset(raw),
+    searchAssets: (raw: unknown) => solana.searchAssets(raw),
+    listLocalWallets: () => localWallets.listLocalWallets(),
+    revealLocalWalletSecret: (raw: unknown) => localWallets.revealLocalWalletSecret(raw),
+    generateLocalWallet: (raw: unknown) => localWallets.generateLocalWallet(raw),
+  };
+  return { solana, tapeStore, localWallets, solanaPort };
+}
 
 function json(res: ServerResponse, status: number, body: unknown): void {
   const data = JSON.stringify(body);
@@ -67,29 +86,42 @@ async function readBody(req: IncomingMessage): Promise<unknown> {
   }
 }
 
-const solanaPort = {
-  listWallets: () => solana.listWallets(),
-  getWalletAssets: (raw: unknown) => solana.getWalletAssets(raw),
-  getAsset: (raw: unknown) => solana.getAsset(raw),
-  searchAssets: (raw: unknown) => solana.searchAssets(raw),
-  listLocalWallets: () => localWallets.listLocalWallets(),
-  revealLocalWalletSecret: (raw: unknown) => localWallets.revealLocalWalletSecret(raw),
-  generateLocalWallet: (raw: unknown) => localWallets.generateLocalWallet(raw),
-};
-
 export function createHarnessServer() {
+  const { solana, tapeStore, localWallets, solanaPort } = createRuntime();
   return createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", `http://127.0.0.1:${PORT}`);
     const method = req.method ?? "GET";
     try {
       if (method === "GET" && url.pathname === "/api/health") {
         const status = await solana.getStatus();
+        const wallets = await localWallets.listLocalWallets();
         return json(res, 200, {
           app: PRODUCT_ID,
           name: PRODUCT_NAME,
           pid: process.pid,
           solana: status,
+          connectors: listConnectorStatuses(connectorSecrets()),
+          tape: tapeStore.snapshot(),
+          wallets,
         });
+      }
+      if (method === "GET" && url.pathname === "/api/connectors") {
+        return json(res, 200, { connectors: listConnectorStatuses(connectorSecrets()) });
+      }
+      const connectMatch = url.pathname.match(/^\/api\/connectors\/([A-Za-z0-9_]+)\/connect$/);
+      if (method === "POST" && connectMatch && CONNECTOR_IDS.includes(connectMatch[1] as ConnectorId)) {
+        return json(res, 200, connectConnector(connectMatch[1] as ConnectorId, connectorSecrets()));
+      }
+      if (method === "GET" && url.pathname === "/api/pump/recent") {
+        return json(res, 200, { launches: tapeStore.recent({ limit: 12 }), snapshot: tapeStore.snapshot() });
+      }
+      if (method === "POST" && url.pathname === "/api/pump/apply") {
+        const body = await readBody(req);
+        const raw = typeof body === "string" ? body : JSON.stringify(body);
+        const message = parsePumpMessage(raw);
+        if (message == null) return json(res, 400, { error: "unrecognized pump message" });
+        tapeStore.apply(message);
+        return json(res, 200, { launches: tapeStore.recent({ limit: 12 }) });
       }
       if (method === "GET" && url.pathname === "/api/solana/status") {
         return json(res, 200, await solana.getStatus());

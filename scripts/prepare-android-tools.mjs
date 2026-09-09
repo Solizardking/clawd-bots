@@ -9,18 +9,21 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const platformNames = { darwin: "darwin", linux: "linux", win32: "win32" };
 const archiveNames = { darwin: "darwin", linux: "linux", win32: "windows" };
-const platform = platformNames[process.platform];
-const archive = archiveNames[process.platform];
-if (!platform || !archive) throw new Error(`Android Platform Tools are unsupported on ${process.platform}`);
+const args = process.argv.slice(2);
+if (args.length && (args.length !== 2 || args[0] !== '--platform')) throw new Error('Usage: prepare-android-tools.mjs [--platform darwin|linux|win32]');
+const targetPlatform = args[1] ?? process.platform;
+const platform = platformNames[targetPlatform];
+const archive = archiveNames[targetPlatform];
+if (!platform || !archive) throw new Error(`Android Platform Tools are unsupported on ${targetPlatform}`);
 
 const finalDir = join(root, "dist-native", "android-platform-tools", platform);
 const override = process.env.OMB_ANDROID_PLATFORM_TOOLS_SOURCE;
-const temporary = mkdtempSync(join(tmpdir(), "openmaus-android-tools-"));
+const temporary = mkdtempSync(join(tmpdir(), "clawd-android-tools-"));
 const staged = join(temporary, platform);
 
 try {
   if (override) {
-    if (!existsSync(join(override, process.platform === "win32" ? "adb.exe" : "adb"))) {
+    if (!existsSync(join(override, targetPlatform === "win32" ? "adb.exe" : "adb"))) {
       throw new Error(`OMB_ANDROID_PLATFORM_TOOLS_SOURCE has no adb: ${override}`);
     }
     cpSync(override, staged, { recursive: true });
@@ -54,7 +57,7 @@ try {
     cpSync(join(extraction, "platform-tools"), staged, { recursive: true });
   }
 
-  const adb = join(staged, process.platform === "win32" ? "adb.exe" : "adb");
+  const adb = join(staged, targetPlatform === "win32" ? "adb.exe" : "adb");
   if (!existsSync(adb)) throw new Error("Downloaded Android Platform Tools do not contain adb");
   mkdirSync(dirname(finalDir), { recursive: true });
   rmSync(finalDir, { recursive: true, force: true });

@@ -24,6 +24,12 @@ const port = 21000 + Math.floor(Math.random() * 9000);
 
 // OMB_SMOKE_DIST lets the release workflow aim this at a packaged app's
 // Resources/server tree instead of the repo build.
+const staticDir = join(staging, "ui");
+const packagedUi = process.env.OMB_SMOKE_UI ?? (process.env.OMB_SMOKE_DIST
+  ? join(dirname(process.env.OMB_SMOKE_DIST), 'ui')
+  : join(root, 'dist-ui'));
+cpSync(packagedUi, staticDir, { recursive: true });
+
 cpSync(process.env.OMB_SMOKE_DIST ?? join(root, "dist-server"), join(staging, "server"), { recursive: true });
 
 const child = spawn(process.execPath, [join(staging, "server", "index.js")], {
@@ -34,6 +40,7 @@ const child = spawn(process.execPath, [join(staging, "server", "index.js")], {
     HOME: home,
     USERPROFILE: home,
     OMB_PORT: String(port),
+    OMB_STATIC_DIR: staticDir,
   },
   stdio: ["ignore", "pipe", "pipe"],
 });
@@ -64,7 +71,9 @@ while (Date.now() < deadline) {
   if (child.exitCode !== null) break;
   try {
     const res = await fetch(`http://127.0.0.1:${port}/api/health`);
-    if (res.ok) {
+    const health = await res.json();
+    const ui = await fetch(`http://127.0.0.1:${port}/`);
+    if (res.ok && health.app === "clawdbot" && health.static === true && ui.ok && (await ui.text()).includes("<html")) {
       listening = true;
       break;
     }

@@ -229,7 +229,7 @@ describe("hosted endpoint advertisement", () => {
       "PUT",
       "/hosted-endpoint",
       headers,
-      JSON.stringify({ url: "https://C-Opaque.Clawd Bot.Test/" }),
+      JSON.stringify({ url: "https://C-Opaque.ClawdBot.Test/" }),
     );
     expect(published.status).toBe(200);
     expect(published.body.endpoints[0]).toEqual({

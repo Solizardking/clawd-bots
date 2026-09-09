@@ -34,7 +34,7 @@ interface RoutineBody {
   name: string;
   prompt: string;
   botId: string;
-  runOn: "maus";
+  runOn: "clawd";
   schedule: { type: "once"; at: number };
 }
 
@@ -60,7 +60,7 @@ posixOnly("routine failure notification wiring", () => {
       join(home, ".clawdbot", "config.json"),
       JSON.stringify({
         instances: {
-          grok: {
+          fixtureGrok: {
             driver: "grokAgent",
             // fail-after-text streams a partial answer before failing: with a
             // NON-empty reply, only the routine-failed/done dedup suppresses
@@ -117,7 +117,7 @@ posixOnly("routine failure notification wiring", () => {
           await api("PATCH", `/api/bots/${bot.id}`, {
             name: "Routine Scout",
             notifications: true,
-            modelSelection: { instanceId: "grok", model: "fake-model" },
+            modelSelection: { instanceId: "fixtureGrok", model: "fake-model" },
           })
         ).status,
       ).toBe(200);
@@ -126,7 +126,7 @@ posixOnly("routine failure notification wiring", () => {
         name: "Broken nightly report",
         prompt: "Prepare the report",
         botId: bot.id,
-        runOn: "maus",
+        runOn: "clawd",
         schedule: { type: "once", at: Date.now() + 60_000 },
       });
       expect(created.status).toBe(201);

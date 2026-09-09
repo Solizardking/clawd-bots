@@ -279,7 +279,9 @@ export const PiDriver: ProviderDriver<PiConfig> = {
         // Keep the last usable catalog when the probe fails.
       }
     };
-    await refreshModels();
+    // The packaged UI can open while optional catalogs are discovered.
+    if (process.env.OMB_STATIC_DIR) void refreshModels();
+    else await refreshModels();
 
     const listeners = new Set<RuntimeEventListener>();
     // one active turn per thread

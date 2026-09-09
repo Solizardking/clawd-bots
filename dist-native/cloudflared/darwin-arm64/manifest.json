@@ -1,7 +1,0 @@
-{
-  "version": "2026.8.2",
-  "target": "darwin-arm64",
-  "releaseAsset": "cloudflared-darwin-arm64.tgz",
-  "releaseAssetSha256": "9042c2c5d8b2de78e60f313d5fb31b6c5c1cebde787a3caf1f2c9588084ac442",
-  "binarySha256": "b61054d3d6326ea558cb49826eebf5676e0d0a36d51b546975096ca3e0e3c89d"
-}

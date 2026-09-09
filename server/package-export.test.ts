@@ -50,7 +50,7 @@ describe("package export", () => {
         name: "Release check",
         prompt: "Verify release readiness.",
         botId: "private-id",
-        runOn: "maus",
+        runOn: "clawd",
         enabled: true,
         schedule: { type: "daily", time: "09:00", weekdays: [1] },
         durationMinutes: 30,
@@ -61,7 +61,7 @@ describe("package export", () => {
     });
 
     expect(exported).toMatchObject({
-      format: "openmaus.package",
+      format: "clawd.package",
       package: {
         chiefOfStaff: "lead",
         requirements: { apps: [{ slug: "github" }] },

@@ -2,6 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import { createTeamManifest, importedMemberProfile, parseTeamManifest } from "./team-manifest.ts";
 
+it('imports a legacy team while emitting only the Clawd format',()=>{
+  const parsed=parseTeamManifest({format:'openmaus.team',version:2,team:{name:'Migrated team',members:[{key:'research',name:'Research',appearance:{color:'green'}}]}});
+  expect(parsed.format).toBe('clawd.team');
+  expect(parsed.team.members[0].name).toBe('Research');
+});
+
 describe("team manifests", () => {
   it("exports portable member keys without room or runtime state", () => {
     const manifest = createTeamManifest(
@@ -29,7 +35,7 @@ describe("team manifests", () => {
     );
 
     expect(manifest).toMatchObject({
-      format: "openmaus.team",
+      format: "clawd.team",
       version: 2,
       team: {
         name: "Launch Crew",
@@ -42,7 +48,7 @@ describe("team manifests", () => {
 
   it("parses legacy room files while dropping unrelated settings", () => {
     const manifest = parseTeamManifest({
-      format: "openmaus.team",
+      format: "clawd.team",
       version: 1,
       team: {
         name: "  Research Lab  ",
@@ -83,7 +89,7 @@ describe("team manifests", () => {
 
   it("parses room-free version 2 files", () => {
     const manifest = parseTeamManifest({
-      format: "openmaus.team",
+      format: "clawd.team",
       version: 2,
       team: {
         name: "Engineering",
@@ -104,10 +110,10 @@ describe("team manifests", () => {
   });
 
   it("rejects unsupported versions and dangling member references", () => {
-    expect(() => parseTeamManifest({ format: "openmaus.team", version: 99 })).toThrow("not supported");
+    expect(() => parseTeamManifest({ format: "clawd.team", version: 99 })).toThrow("not supported");
     expect(() =>
       parseTeamManifest({
-        format: "openmaus.team",
+        format: "clawd.team",
         version: 1,
         team: {
           name: "Broken",
@@ -141,14 +147,14 @@ describe("team manifests", () => {
     };
     expect(() =>
       parseTeamManifest({
-        format: "openmaus.team",
+        format: "clawd.team",
         version: 1,
         team: { name: "Research", members: [member, member], room },
       }),
     ).toThrow("Duplicate member key");
     expect(() =>
       parseTeamManifest({
-        format: "openmaus.team",
+        format: "clawd.team",
         version: 1,
         team: {
           name: "Research",
@@ -161,7 +167,7 @@ describe("team manifests", () => {
 
   it("drops privileged fields a hand-edited file smuggles onto a member", () => {
     const manifest = parseTeamManifest({
-      format: "openmaus.team",
+      format: "clawd.team",
       version: 2,
       team: {
         name: "Trap",

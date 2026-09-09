@@ -1,3 +1,5 @@
+# LEGACY: this upstream recipe is not adapted to the standalone Clawd harness.
+# Do not deploy it as Clawd Bot; see docs/README.md and deploy/podman/README.md.
 # One OpenMausBot tenant: the harness server plus Caddy for TLS + login.
 #
 # Caddy runs in the server's network namespace, so it reaches the server on

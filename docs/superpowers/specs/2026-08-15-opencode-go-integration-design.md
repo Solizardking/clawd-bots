@@ -1,49 +1,27 @@
-# OpenCode Go Integration Design
+# Clawd Bot design: OpenCode through ACP
 
-## Goal
-
-Add OpenCode Go as an optional first-class Clawd Bot engine by launching the maintained OpenCode CLI through its ACP stdio interface. The integration must preserve the existing session, streaming, tool, permission, cancellation, MCP, credential, and model-selection contracts.
+Historical design dated August 15, 2026, reconciled with the current general OpenCode integration. The internal `opencodeGo` identifier remains for saved-state compatibility; the product name is OpenCode.
 
 ## Scope
 
-- Add an ACP support definition and OpenCode Go driver using the existing ACP runtime.
-- Detect the `opencode` executable through the repository's existing cross-platform PATH discovery.
-- Expose advertised `opencode-go/*` models from the public catalog, with safe fallback behavior when the catalog is unavailable.
-- Store the API key write-only and inject it only into the OpenCode child process as `OPENCODE_API_KEY`.
-- Integrate availability, setup, onboarding, and model selection without making OpenCode Go a default engine.
-- Cover protocol ordering, streaming, tools, permissions, resume, model switching, cancellation, process cleanup, catalog failures, and credential redaction with automated tests.
-- Keep live subscription tests opt-in and prevent credentials or native protocol logs from appearing in CI output.
-
-## Out of scope
-
-- A direct OpenCode Go HTTP/API driver.
-- OpenCode's HTTP server/SDK lifecycle.
-- Automatic installation, subscription purchase, billing, usage top-ups, or modification of OpenCode's own auth files.
-- Support for the archived Go-language OpenCode repository.
+Launch the maintained OpenCode CLI through ACP stdio. Preserve the shared engine contract for sessions, tools, streaming, permissions, model selection, cancellation, MCP configuration, and process cleanup. This design does not introduce a direct provider HTTP client or own OpenCode's subscriptions.
 
 ## Architecture
 
-`server/drivers/acp/opencode-go.ts` will define the engine-specific executable, environment construction, model catalog metadata, and ACP session behavior on top of `server/drivers/acp/core.ts`. It will use the same registry and contracts as the existing ACP engines, so the engine remains isolated from provider-specific model APIs.
+The engine-specific definition lives in `server/drivers/acp/opencode-go.ts`; shared JSON-RPC behavior lives in `server/drivers/acp/core.ts`. Model discovery runs the configured CLI and preserves provider-qualified identifiers. A last-successful catalog and static fallback contain catalog outages.
 
-The catalog layer will fetch `https://opencode.ai/zen/go/v1/models`, normalize only valid provider-qualified model IDs, cache the last successful result in memory, and fall back to a small static availability response when the endpoint is unavailable. The UI will consume the existing engine/model payloads and will not receive the credential.
+The original proposal used a public Go-only catalog and key-required availability. Those assumptions are superseded: existing OpenCode logins and usable-model probing can make the engine available. A discovered model is still not proof of inference access.
 
-Credential handling will follow existing write-only secret conventions. The key may come from configured storage or an environment fallback, but renderer payloads, logs, errors, snapshots, child arguments, and analytics must never contain it. Only the spawned OpenCode process receives `OPENCODE_API_KEY`.
+## Runtime and credentials
 
-## Runtime flow
+Initialize ACP, create or load the session, set the exact selected model using `session/set_config_option`, then prompt. Stream text and tool events through the normal harness and resolve approvals through its permission path.
 
-1. Registry discovers the OpenCode executable and checks configuration/credential presence.
-2. Setup or onboarding can configure the engine without installing a CLI or restarting the app.
-3. A session starts through ACP, authenticates, creates or loads a session, and sets the full `opencode-go/<model-id>` value with `session/set_config_option` before the first prompt.
-4. ACP events stream text and tool activity through existing Clawd Bot event handling.
-5. Permission requests are brokered through the existing permission proxy; allow, deny, timeout, and missing-option paths remain explicit.
-6. Cancellation terminates the session/process cleanly, including early exit and malformed JSON-RPC cases.
+A supplied OpenCode key is child-scoped and write-only to the UI. Authentication discovery reads existing OpenCode login state without rewriting `auth.json`. Injected local models may update provider/model entries in `opencode.json`; that configuration write and its credential handling need separate coverage.
 
-## Error handling
+## Error and acceptance contract
 
-Errors must distinguish missing CLI, missing/invalid credential, inactive subscription, quota/region restrictions, upstream outage, and model-catalog outage. Mutable upstream English messages must not be used as the sole classifier. Catalog failure must not make unrelated engines unavailable, and OpenCode Go must never be selected as runnable unless its executable and credential prerequisites are satisfied.
+Distinguish unavailable CLI, invalid credentials, subscription or quota restrictions, upstream failure, and model discovery failure. Prefer structured error codes over mutable provider prose. An OpenCode failure must not disable unrelated engines.
 
-## Testing and acceptance
+Fake-CLI tests must cover ordering, exact IDs, streaming without duplicate final text, permissions, resume, model switching, malformed messages, cancellation, cleanup, and concurrent-session isolation. Live provider verification is opt-in and must not publish credentials or raw authenticated logs.
 
-Unit tests will use the existing fake ACP CLI/test harness where possible. They must verify config defaults, refreshed PATH discovery, write-only credentials, catalog success/failure/cache/fallback, exact model IDs, protocol ordering, streaming without duplicate final content, tool/permission lifecycle, resume and model switching, cancellation/process cleanup, and concurrent sessions without shared state. A live test suite is opt-in only.
-
-The implementation is complete when all advertised models can be selected and confirmed by ACP, sessions can stream/tool/continue/switch/cancel, setup works on macOS/Linux/Windows paths, secrets remain absent from all observable app surfaces, and the normal repository typecheck/build/test commands pass.
+See [the maintenance checklist](../plans/2026-08-15-opencode-go-integration.md) and [current setup](../../opencode-go.md).

@@ -125,19 +125,19 @@ resources forever without creating an unbounded scheduled invocation.
 Install from the repository root, then run:
 
 ```sh
-pnpm control-plane:check
-pnpm control-plane:test
-pnpm control-plane:dry-run
+npm run control-plane:check
+npm run control-plane:test
+npm run control-plane:dry-run
 ```
 
 For local manual development, copy `.dev.vars.example` to `.dev.vars`, replace
 `BETTER_AUTH_SECRET` with at least 32 cryptographically random bytes, provide a
 non-production scoped `CLOUDFLARE_API_TOKEN`, apply the migrations locally, and
-start Wrangler:
+start Wrangler from this directory:
 
 ```sh
-npm run --prefix @clawdbot/control-plane exec wrangler d1 migrations apply DB --local --config wrangler.jsonc
-npm run --prefix @clawdbot/control-plane exec wrangler dev --config wrangler.jsonc
+npm run migrate:local --prefix clawd/cloudflare/control-plane
+npx wrangler dev --config clawd/cloudflare/control-plane/wrangler.jsonc
 ```
 
 Do not commit `.dev.vars`.

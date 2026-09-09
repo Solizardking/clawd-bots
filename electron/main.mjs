@@ -1,5 +1,13 @@
+import { loadEnvFile } from "node:process";
 import { app, BrowserWindow, clipboard, desktopCapturer, dialog, ipcMain, Menu, nativeImage, powerSaveBlocker, safeStorage, screen, session, shell, systemPreferences, utilityProcess } from "electron";
 import { createRequire } from "node:module";
+
+// Load private workspace defaults for local desktop development.
+if (!app.isPackaged) {
+  try { loadEnvFile(new URL("../.env", import.meta.url)); }
+  catch (error) { if (error.code !== "ENOENT") throw error; }
+}
+
 import { randomBytes, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -57,10 +65,13 @@ const { desktopViewerUrl, sameDesktopViewerOrigin } = require("./desktop-viewer.
 const { normalizeUnreadCount, parseWindowState, resolveWindowState } = require("./window-state.cjs");
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// Keep the standalone desktop install separate from legacy CLI/gateway data.
+// Pass the same resolved directory to every Electron service and server child.
+process.env.OMB_DATA_DIR = process.env.CLAWD_DATA_DIR || process.env.OMB_DATA_DIR
+  || (app.isPackaged ? path.join(app.getPath("userData"), "workspace") : path.join(app.getPath("home"), ".clawdbot"));
 // 127.0.0.1 explicitly — vite binds IPv4; a bare "localhost" here can
 // resolve to ::1 and paint a black window
 const DEV_URL = process.env.ELECTRON_START_URL ?? "http://127.0.0.1:5199";
-const DEFAULT_COMPOSIO_BROKER_URL = "https://clawdbot-composio.milindsoni201.workers.dev";
 let SERVER_PORT = 8799;
 const APP_ICON = path.join(__dirname, "resources/app-icon.png");
 let desktopViewerWindow = null;
@@ -299,10 +310,8 @@ async function secureWorkspaceConfig() {
 }
 
 function composioBrokerUrl() {
-  const configured = process.env.OMB_COMPOSIO_BROKER_URL?.trim();
-  return normalizeManagedComposioBrokerUrl(
-    configured || (app.isPackaged ? DEFAULT_COMPOSIO_BROKER_URL : ""),
-  );
+  const configured = process.env.CLAWD_COMPOSIO_BROKER_URL ?? process.env.OMB_COMPOSIO_BROKER_URL;
+  return normalizeManagedComposioBrokerUrl(configured?.trim() ?? "");
 }
 
 // The packaged app has no terminal: everything about the server child's life
@@ -697,10 +706,13 @@ async function startServerOn(port) {
   // Identity check is by PID: a dev harness server has the same API shape,
   // so only the child we actually forked (matching pid + static serving)
   // counts as ours.
-  for (let i = 0; i < 40; i++) {
+  // Provider discovery can include multiple bounded CLI probes on first boot.
+  // Give that startup time to finish instead of repeatedly killing a healthy
+  // child at 20 seconds and displaying the recovery page.
+  for (let i = 0; i < 240; i++) {
     if (exited) return null;
     try {
-      const res = await fetch(`http://127.0.0.1:${port}/api/health`);
+      const res = await fetch(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(1500) });
       if (res.ok) {
         const body = await res.json().catch(() => null);
         if (body?.app === "clawdbot" && body.pid === proc.pid && body.static) return proc;
@@ -1636,10 +1648,13 @@ app.on("before-quit", (e) => {
       // remembered toggle the next launch will restore.
       stopDesktopCompanion({ remember: false }).catch(() => {}),
     ]),
-    new Promise((resolve) => setTimeout(resolve, CUA_STOP_TIMEOUT_MS).unref()),
+    new Promise((resolve) => setTimeout(resolve, CUA_STOP_TIMEOUT_MS)),
   ]);
   cleanup.then(() => {
     cuaCleanedUp = true;
-    app.quit();
+    // Cleanup already ran. Finish the exit directly: a second app.quit()
+    // can be cancelled by a renderer after its local server has stopped,
+    // leaving a singleton that reopens to chrome-error://chromewebdata.
+    app.exit(0);
   });
 });

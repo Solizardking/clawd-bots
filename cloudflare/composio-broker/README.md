@@ -8,12 +8,19 @@ MCP traffic, and returns short-lived Connect Links to the local app.
 The desktop never receives the project key. Authorization links are returned
 only on demand and are never persisted in chat messages.
 
-Deployment for this repository:
+Deployment for this repository (npm toolchain from the reconstruction root):
 
-1. `pnpm broker:types`
-2. `pnpm exec wrangler d1 migrations apply clawdbot-composio --remote --config cloudflare/composio-broker/wrangler.jsonc`
-3. For an existing Worker, run `pnpm exec wrangler secret put COMPOSIO_API_KEY --config cloudflare/composio-broker/wrangler.jsonc`, then `pnpm broker:deploy`.
-4. For the very first deploy, put `COMPOSIO_API_KEY=...` in the ignored `.dev.vars.production` file and run `pnpm exec wrangler deploy --config cloudflare/composio-broker/wrangler.jsonc --secrets-file .dev.vars.production`. Delete the file immediately afterward.
+1. `npm install --prefix clawd/cloudflare/composio-broker`
+2. `npm run migrate:remote --prefix clawd/cloudflare/composio-broker`
+3. For an existing Worker, put `COMPOSIO_API_KEY` with Wrangler's secret command, then `npm run composio-broker:deploy`.
+4. For the very first deploy, put `COMPOSIO_API_KEY=...` in the ignored `.dev.vars.production` file and run `npx wrangler deploy --config clawd/cloudflare/composio-broker/wrangler.jsonc --secrets-file clawd/cloudflare/composio-broker/.dev.vars.production`. Delete the file immediately afterward.
+
+Local checks:
+
+```sh
+npm run composio-broker:test
+npm run composio-broker:dry-run
+```
 
 Forks should create their own D1 database and rate-limit namespaces, replace
 the IDs in `wrangler.jsonc`, deploy under their own Worker name, and set

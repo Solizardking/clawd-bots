@@ -1,65 +1,37 @@
-# Cursor Agent CLI
+# Use Cursor with Clawd Bot
 
-Cursor is an optional Clawd Bot engine. Clawd Bot runs the official
-[`cursor-agent` CLI](https://cursor.com/docs/cli) in ACP stdio mode (`cursor-agent acp`), so
-sessions, streaming, coding tools, permission requests, MCP integrations,
-resume, and cancellation use the same runtime as the other ACP engines.
-
-Bots on this engine consume the user's Cursor subscription (or a
-`CURSOR_API_KEY` / `CURSOR_AUTH_TOKEN`), not a separate Anthropic/OpenAI/xAI
-key.
+Cursor is an optional engine. Clawd Bot launches `cursor-agent acp` and uses the shared ACP runtime for sessions, streaming, tools, approvals, resume, and cancellation. Cursor owns authentication and model access.
 
 ## Setup
 
-1. Install Cursor CLI:
+Install the CLI using the [official Cursor CLI guide](https://cursor.com/docs/cli/overview). This checkout defaults to the executable name `cursor-agent`; confirm that executable is available to the configured instance even if the upstream guide also uses the shorter `agent` command.
 
-   ```sh
-   curl https://cursor.com/install -fsS | bash   # macOS / Linux
-   ```
+```sh
+cursor-agent --version
+cursor-agent login
+cursor-agent models
+```
 
-   Windows (native): `irm 'https://cursor.com/install?win32=true' | iex`
+Alternatively, configure `CURSOR_API_KEY` or `CURSOR_AUTH_TOKEN` in the instance environment. Restart Clawd Bot after installation or login. GUI discovery includes common CLI locations such as `~/.local/bin`; a missing binary or login should appear as an availability problem for that engine.
 
-2. Sign in with `cursor-agent login`, or set `CURSOR_API_KEY` / `CURSOR_AUTH_TOKEN`
-   in the environment of the Cursor instance.
+## Model selection
 
-3. Confirm `cursor-agent --version` works. The binary installs to `~/.local/bin` by
-   default; Clawd Bot already looks there when launched from a GUI.
+The adapter merges discovered models with a static fallback catalog and retains a usable catalog if discovery fails. A model in the picker is not proof that the signed-in account can use it.
 
-The engine stays unavailable until the `cursor-agent` executable is on PATH. A
-missing login shows as unauthenticated rather than crashing the fleet.
+Clawd Bot passes `--model <slug>` before `acp`. When ACP supports `session/set_model`, the adapter maps the selected slug to an advertised ACP ID. These namespaces can differ: `auto` may map to `default[]`, and a model slug may map to an ID containing reasoning parameters. If the method is unsupported, the argv selection remains the fallback.
 
-## Models
+## Permissions and limitations
 
-The picker starts from a small static catalog and refreshes from plain
-`cursor-agent models` output (`slug - Label`, with `(default)` / `(current)` markers).
-Live ids are merged into the main cloud rail (not the local-models pane). A
-failed listing keeps the last usable catalog (then the static fallback) rather
-than emptying the rail.
+Instance `fullAuto: true` adds `--force`. ACP permission requests still pass through Clawd Bot's permission handling; automatic mode chooses an offered allow option when available.
 
-`--model <id>` is passed as a global CLI flag before `acp`. When the running
-CLI also implements ACP `session/set_model`, Clawd Bot pins the same id over
-the wire. If that method is missing (`-32601`), the argv pin is left to stand
-and the turn continues.
+Cursor-specific extension methods do not all have dedicated Clawd Bot UI. Unknown JSON-RPC requests receive method-not-found rather than hanging. MCP availability depends on the installed CLI's ACP support; inspect its project or user configuration when a tool is missing.
 
-## Autonomy
+## Verify an integration change
 
-Instance `fullAuto: true` adds `--force` (the CLI's documented auto-approve
-switch). Clawd Bot still answers ACP `session/request_permission` itself:
-full-auto selects an allow option when the CLI offered one.
+From the Clawd Bot repository root:
 
-## What this driver does not do yet
+```sh
+npx vitest run server/drivers/acp/cursor.test.ts server/drivers/acp/acp.test.ts
+```
 
-- Cursor ACP extension methods (`cursor/ask_question`, `cursor/create_plan`,
-  todos/tasks/images) are not given a dedicated UI. Unknown JSON-RPC requests
-  are rejected with method-not-found so the CLI is not left blocked.
-- MCP servers passed in `session/new` follow Cursor's ACP limitations; prefer
-  project or user `.cursor/mcp.json` where needed.
-- Live smoke (`cursor-agent login`, `cursor-agent models`, one real turn) should be run on
-  a machine with the CLI installed and signed in before relying on this in
-  production.
-
-## Testing
-
-Normal unit and ACP protocol tests use the scripted fake CLI and do not
-require a Cursor subscription. Do not print credentials or upload native
-protocol logs from a credentialed live run.
+For live validation, use a signed-in CLI and verify a reply, the selected model, a tool approval, resume, and cancellation. Record the CLI version and outcome without credentials or raw credentialed protocol logs. Implementation: [Cursor adapter](../server/drivers/acp/cursor.ts).

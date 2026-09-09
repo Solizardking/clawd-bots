@@ -39,6 +39,7 @@ import type {
   RuntimeEventListener,
   SendTurnInput,
   ProviderErrorCode,
+  RequestOutcome,
 } from "../../contracts.ts";
 import { newEventId, newId } from "../../contracts.ts";
 import { computerProxyEnv } from "../../container-computer.ts";
@@ -217,13 +218,15 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
           // Keep the last usable catalog when an optional discovery source is down.
         }
       };
-      await refreshModels();
+      // The packaged UI can open while optional catalogs are discovered.
+    if (process.env.OMB_STATIC_DIR) void refreshModels();
+    else await refreshModels();
       const listeners = new Set<RuntimeEventListener>();
       interface Turn {
         stop: () => void;
         interrupt: () => void;
         turnId: string;
-        asks: Map<string, (behavior: string, source?: "user" | "timeout" | "system") => void>;
+        asks: Map<string, (behavior: string, source?: "user" | "timeout" | "system") => RequestOutcome>;
       }
       const active = new Map<string, Turn>();
 
@@ -321,7 +324,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
         });
 
         const state = { settled: false, promptSent: false, text: "" };
-        const asks = new Map<string, (behavior: string, source?: "user" | "timeout" | "system") => void>();
+        const asks = new Map<string, (behavior: string, source?: "user" | "timeout" | "system") => RequestOutcome>();
         let nextId = 1;
         let sessionId: string | null = null;
         let interruptTimer: ReturnType<typeof setTimeout> | null = null;
@@ -387,7 +390,9 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
           flushAssistantText();
           const options: Array<{ optionId?: string; kind?: string }> = Array.isArray(params.options) ? params.options : [];
           const optionFor = (want: "allow" | "reject") =>
-            options.find((o) => String(o.kind ?? "").startsWith(want) && typeof o.optionId === "string")?.optionId ?? null;
+            // The UI answers this request only; a provider's option ordering
+            // must never turn it into a persistent allow/deny grant.
+            options.find((o) => o.kind === `${want}_once` && typeof o.optionId === "string")?.optionId ?? null;
           const cancelled = { outcome: { outcome: "cancelled" } };
           const missing = (want: string) =>
             emit({
@@ -410,8 +415,8 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
           const tool = kind === "execute" ? "shell" : kind === "edit" ? "edit" : kind || "tool";
           const summary = String(toolCall.rawInput?.command ?? toolCall.title ?? tool).slice(0, 200);
           const requestId = newId();
-          const finish = (behavior: string, source: "user" | "timeout" | "system" = "user") => {
-            if (!asks.delete(requestId)) return;
+          const finish = (behavior: string, source: "user" | "timeout" | "system" = "user"): RequestOutcome => {
+            if (!asks.delete(requestId)) return "unavailable";
             clearTimeout(timer);
             const want = behavior === "allow" ? "allow" : "reject";
             const optionId = behavior === "cancel" ? null : optionFor(want);
@@ -429,6 +434,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
               source: optionId ? source : "system",
               approvalScope: controlsHost ? "local-computer" : undefined,
             });
+            return optionId ? (behavior === "allow" ? "allowed-once" : "rejected") : "unavailable";
           };
           const timer = setTimeout(() => {
             emit({ ...base(threadId, turnId), type: "runtime.error", message: DENY_TIMEOUT_NOTE });
@@ -753,8 +759,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             const turn = active.get(threadId);
             const finish = turn?.asks.get(requestId);
             if (!finish) return "unavailable"; // settled, timed out, or turn gone
-            finish(decision.behavior === "allow" ? "allow" : "deny", "user");
-            return decision.behavior === "allow" ? "allowed-once" : "rejected";
+            return finish(decision.behavior === "allow" ? "allow" : "deny", "user");
           },
           hasSession: (threadId) => active.has(threadId),
           stopAll: async () => {

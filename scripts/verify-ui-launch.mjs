@@ -1,11 +1,14 @@
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
+import { mkdtemp } from "node:fs/promises";
+import os from "node:os";
+import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const dist = path.join(repoRoot, "clawd/dist-ui");
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const dist = path.join(repoRoot, "dist-ui");
 const shot = process.argv[2];
 const logPath = process.argv[3];
 const logs = [];
@@ -24,8 +27,53 @@ const MIME = {
   ".woff2": "font/woff2",
 };
 
+const dataDir = await mkdtemp(path.join(os.tmpdir(), "clawd-ui-harness-"));
+const harnessPort = 19000 + Math.floor(Math.random() * 1000);
+const harness = spawn(
+  process.execPath,
+  ["--experimental-strip-types", path.join(repoRoot, "server/harness-entry.ts")],
+  {
+    cwd: repoRoot,
+    env: { ...process.env, CLAWD_PORT: String(harnessPort), CLAWD_DATA_DIR: dataDir },
+    stdio: ["ignore", "pipe", "pipe"],
+  },
+);
+await new Promise((resolve, reject) => {
+  const timer = setTimeout(() => reject(new Error("harness start timeout")), 15000);
+  harness.stdout.on("data", (chunk) => {
+    if (String(chunk).includes("harness on http://")) {
+      clearTimeout(timer);
+      resolve();
+    }
+  });
+  harness.stderr.on("data", (chunk) => process.stderr.write(chunk));
+  harness.on("exit", (code) => reject(new Error(`harness exited ${code}`)));
+});
+say(`harness=http://127.0.0.1:${harnessPort}`);
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url ?? "/", "http://127.0.0.1");
+  if (url.pathname.startsWith("/api/")) {
+    const proxy = http.request(
+      {
+        hostname: "127.0.0.1",
+        port: harnessPort,
+        path: url.pathname + url.search,
+        method: req.method,
+        headers: req.headers,
+      },
+      (upstream) => {
+        res.writeHead(upstream.statusCode ?? 502, upstream.headers);
+        upstream.pipe(res);
+      },
+    );
+    proxy.on("error", () => {
+      res.writeHead(502);
+      res.end("harness proxy failed");
+    });
+    req.pipe(proxy);
+    return;
+  }
   const rel = url.pathname === "/" ? "/index.html" : url.pathname;
   const file = path.join(dist, path.normalize(rel).replace(/^(\.\.[/\\])+/, ""));
   fs.readFile(file, (err, data) => {
@@ -79,10 +127,26 @@ say(`skin=${skin}`);
 say(`tokens=${JSON.stringify(tokens)}`);
 say(`pageErrors=${JSON.stringify(pageErrors)}`);
 
-const nameInput = page.getByPlaceholder("Your name");
+const rootText = tokens.rootText;
+for (const name of ["Jupiter", "Phantom", "Pump.fun", "Helius", "PayBox", "lobster"]) {
+  if (!rootText.includes(name)) throw new Error(`missing connector ${name}`);
+}
+if (!rootText.includes("Pump.fun tape") && !rootText.includes("Listening for launches")) {
+  throw new Error("tape region missing");
+}
+if (rootText.includes("Meet Clawd Bot") || rootText.includes("Give each Bot a job")) {
+  throw new Error("old intro still showing");
+}
+if (!rootText.includes("Clawd Bot on Solana")) throw new Error("new intro heading missing");
+const nameInput = page.getByPlaceholder("Wallet name");
 await nameInput.fill("Cluster Operator");
 const typed = await nameInput.inputValue();
 say(`typed=${typed}`);
+await page.getByRole("button", { name: "Create wallet" }).click();
+await page.waitForSelector("[data-wallet-address], [data-wallet-error]", { timeout: 8000 });
+const afterClick = await page.locator("[data-wallet-address], [data-wallet-error]").first().textContent();
+say(`walletFeedback=${afterClick}`);
+if (!afterClick || afterClick.trim().length === 0) throw new Error("wallet create produced no visible result");
 
 if (title !== "Clawd Bot") throw new Error(`title was ${title}`);
 if (skin !== "solana") throw new Error(`skin was ${skin}`);
@@ -104,4 +168,5 @@ say("OK");
 
 await browser.close();
 server.close();
+harness.kill("SIGTERM");
 fs.writeFileSync(logPath, logs.join("\n") + "\n");

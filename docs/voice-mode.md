@@ -1,113 +1,47 @@
-# Voice in Clawd Bot
+# Voice and calls in Clawd Bot
 
-Decision doc, 2026-08-14. How bots speak, and how you hold a conversation with
-one.
+Clawd Bot can read replies aloud and support spoken conversations in the macOS desktop app. Speech synthesis runs in the harness; the renderer requests and plays audio without receiving provider credentials.
 
-## Shape
+## Choose a voice
 
+| Provider | Requirements | Output |
+| --- | --- | --- |
+| Built-in Mac voices (`system`) | macOS and an installed voice; no API key | WAV audio generated with `/usr/bin/say` |
+| ElevenLabs (`elevenlabs`) | An ElevenLabs key and selected voice | Hosted synthesis audio |
+
+Select a provider and voice in the app's voice settings or agent profile. A bot's own voice can satisfy readiness even without an app-wide default. `configured` means the provider is available; `ready` also requires a voice choice. Missing setup returns an explanatory HTTP 409 from synthesis, rather than a generic provider error.
+
+## Start a call
+
+Calls require the macOS desktop speech helper, microphone access, and speech-recognition permission. The call button explains missing capabilities or voice setup. Bot calls can use the workspace default voice; channel calls require an explicit voice for every participating member.
+
+Calls are half-duplex: microphone capture pauses while the bot speaks. Use the call controls to interrupt or hang up. There is no acoustic echo-cancellation path for hands-free voice barge-in.
+
+Call mode uses an 850 ms transcript-stability interval before ending capture and requesting a final transcript. This is an endpointing setting, not an end-to-end latency guarantee. Composer dictation keeps its explicit stop behavior.
+
+Tool narration uses the harness's `tool.spoken` text. Pending approvals and questions can be read aloud and answered through the call flow. Inspect the approval card whenever spoken intent is ambiguous; voice recognition is not an independent authorization system.
+
+## Data flow
+
+```text
+Microphone → native speech helper → transcript → harness/selected agent
+Agent reply → speech-text preparation → selected voice provider → audio playback
 ```
-Renderer (src/)                        Harness (server/)
-├── lib/tts/index.ts   the speaker     ├── tts/speech-text.ts  markdown → speakable
-│     queue · prefetch · interrupt     └── tts/elevenlabs.ts   verify · voices · synthesize
-└── components/CallView.tsx
-      Apple STT endpointing            POST /api/tts/prepare → utterances
-                                       POST /api/tts/speak   → mp3 bytes
-```
 
-One voice provider: **ElevenLabs, bring your own key**. No local model, no
-second provider, no fallback ladder — if there is no key, voice is off and the
-buttons say so.
+The native helper uses Apple's Speech framework. It requests on-device recognition when the selected recognizer supports it; the implementation does not enforce that setting when unsupported. Do not describe every speech-recognition request as guaranteed local-only. ElevenLabs receives the text submitted for hosted synthesis. System voices synthesize through the Mac's installed speech engine.
 
-## Why the key stays on the harness
+The harness converts Markdown into speakable utterances instead of reading code blocks and markup literally. The renderer queues clips and prefetches subsequent utterances. Routes are:
 
-The renderer never talks to ElevenLabs. `GET /api/config` reports
-configured-or-not booleans and nothing else, which is the same rule every other
-credential follows, and it is worth more than a saved round trip. So the app
-asks the harness for audio and the harness holds the key.
+- `GET /api/tts/voices`: list the selected provider's voices.
+- `POST /api/tts/prepare`: prepare utterances and report voice readiness.
+- `POST /api/tts/speak`: synthesize a bounded utterance using an optional voice override.
 
-Two states worth distinguishing, because they need different instructions:
-`configured` (a key is saved) and `ready` (a key *and* a chosen voice). Speaking
-without either throws `NoVoiceConfigured`, which the route turns into a 409 —
-"you haven't set this up" is not a provider failure and should not look like one.
+Leaving the call target, hanging up, or interrupting must stop playback and release capture. Intentional microphone stops must not trigger a new listening cycle during playback.
 
-## The spoken register
+## Limits and validation
 
-The half that decides whether this is pleasant. Agents write for a screen:
-fenced code, file paths, tables, link soup. Read aloud verbatim, a diff is four
-minutes of punctuation and `server/drivers/acp/core.ts` is "server slash drivers
-slash a c p slash core dot t s".
+Calls depend on macOS dictation capabilities; system voices are also macOS-only. Hosted read-aloud is separate from call availability. There is no voice spend meter, and provider charges are not estimated by this document.
 
-`speech-text.ts` says the prose, names the artifacts, drops the syntax. It also
-splits into utterances, because that is the unit of work — one request, one clip,
-and the client fetches the next while the current one plays. One request per
-utterance rather than the streaming-input WebSocket: same perceived latency, far
-fewer moving parts, and no socket to leak when a turn is interrupted.
+Source: [provider selection](../server/tts/index.ts), [system synthesis](../server/tts/system-voices.ts), [call view](../src/components/CallView.tsx), and [native recognizer](../electron/resources/speech-helper.swift).
 
-## Call mode
-
-**Half-duplex, on purpose.** The dictation helper is `SFSpeechRecognizer` on raw
-`AVAudioEngine` input with no acoustic echo cancellation. A microphone left open
-through playback transcribes the bot's own voice back into the conversation and
-the two of them talk forever. So the mic is live only when the bot is not
-speaking, and interrupting is a tap, the Space bar, or Escape. Full-duplex
-barge-in needs AEC on the capture path — a real follow-up, not a footnote.
-
-**Turn detection stays native and local.** A buffer-backed
-`SFSpeechRecognizer` does not emit `isFinal` just because the speaker becomes
-quiet; it finalizes only after its audio stream ends. Call mode therefore starts
-the native helper with a silence timeout. Once a non-empty transcript stops
-changing for 850ms, the helper stops capture and calls `endAudio()`, which
-produces the final transcript sent to the renderer. Composer dictation omits the
-timeout and keeps its press-to-stop behavior. No cloud STT or bundled VAD model
-is involved.
-
-**Narration is what makes it bearable.** An agent turn is 5–60 seconds of tool
-calls, and silence that long reads as a dropped call. Every activity chip the
-harness narrates is read aloud as it happens. The phrase is computed once,
-server-side, into `tool.spoken` at fold time — so the chip you see and the phrase
-you hear cannot drift apart.
-
-**Approvals are spoken.** A `request.opened` card is read out and answered with
-"yes"/"no". Anything that is not clearly a decision is refused and re-asked:
-consent must never be inferred from a sentence that merely contained the word
-"sure". Non-permission questions are read too, and the next complete spoken
-turn is returned as the answer, so an agent asking for input does not strand the
-call behind an invisible card.
-
-**Latency, honestly.** Endpointing is 300–700ms and time-to-first-byte is
-~100–250ms, against an agent turn of 5–60s. The agent dominates by 50–100x, so
-voice choice is a quality decision, not a latency one. The way to make a call
-feel conversational is to put the bot you call on a fast model and let it
-delegate real work to specialists over `ask_bot` — no new machinery required.
-
-## Rejected
-
-| Option | Why not |
-| --- | --- |
-| OS voices (macOS/Windows) | Audibly synthetic; would cheapen the feature |
-| Piper | Same complaint, one tier up |
-| Kokoro-82M in the renderer | Genuinely good and free, but it is a second provider, a 2.2MB chunk, an ONNX runtime and a first-run model download. Simplicity won. |
-| Cartesia | Cheaper and faster to first byte, but a second provider earns its keep only once one is not enough |
-| ElevenLabs Agents | Its custom-LLM `cascade_timeout_seconds` maxes at 15s and agent turns exceed that; it also wants to own turn-taking and tool calls, which is what the harness owns |
-| OpenAI Realtime / Gemini Live (speech-to-speech) | They replace the brain, and the brain being Claude Code on your own machine *is* the product |
-
-## Known gaps
-
-- **Calls are macOS-only**, because dictation is. The voice half works everywhere.
-- **Rooms don't speak yet**, though per-bot voices already exist (`bot.voice`).
-- **No spend meter.** ElevenLabs bills per character. Auto-speak is off by
-  default partly for that reason, but the app should eventually show usage.
-- **No voice barge-in** — see half-duplex above.
-
-## Failure boundaries
-
-- Intentional microphone stops (playback, hang-up, or replacement) do not emit
-  a natural `speech:end`; otherwise the renderer could reopen capture during
-  the bot's audio.
-- Call phases are updated synchronously alongside React state, so a helper exit
-  in the same event-loop turn as a final transcript cannot observe a stale
-  `listening` phase.
-- Leaving the bot view owns and ends its call. A hidden overlay cannot leave a
-  microphone session or a stale `currentCall` behind.
-- Synthesis requests are abortable from the renderer and individual utterances
-  are capped server-side to bound accidental hosted-voice spend.
+Run `npx vitest run server/tts src/lib/call.test.ts src/lib/group-call.test.ts` for focused coverage. On a Mac, also verify voice setup, spoken replies, a channel with per-member voices, an approval, cancellation, navigation away, and microphone release. Unit tests do not prove audio quality or native permission behavior.

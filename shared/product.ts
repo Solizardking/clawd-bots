@@ -8,3 +8,6 @@ export const PRODUCT_DATA_DIR = ".clawdbot";
 export const PRODUCT_DESKTOP_ID = "com.clawdbot.app.desktop";
 export const SOLANA_PURPLE = "#9945FF";
 export const SOLANA_GREEN = "#14F195";
+export const INTRO_HEADING = "Clawd Bot on Solana";
+export const INTRO_BODY =
+  "Hatch a local Solana wallet, plug in Jupiter, Phantom, Pump.fun, Helius, PayBox and lobster, and watch the live pump.fun tape.";

@@ -219,6 +219,7 @@ describe("ACP turns (fake CLI)", () => {
     delete process.env.FAKE_ACP_MODELS;
     delete process.env.FAKE_ACP_MODEL_STICKS;
     delete process.env.FAKE_ACP_USAGE_ROOT;
+    delete process.env.FAKE_ACP_PERMISSION_OPTIONS;
     recorder?.stop();
     await instance?.dispose();
     await removeTempDir(scratch);
@@ -449,6 +450,28 @@ describe("ACP turns (fake CLI)", () => {
       env: [{ name: "CUA_DRIVER_EMBEDDED", value: "1" }],
     });
     expect(instance.adapter.capabilities.localComputerMcp).toBe(true);
+  });
+
+  it.each([true, false])("never broadens a one-time approval when allow-once exists: %s", async (hasOnce) => {
+    const dump = join(scratch, "permission-options.json");
+    process.env.FAKE_ACP_DUMP = dump;
+    process.env.FAKE_ACP_PERMISSION_OPTIONS = JSON.stringify([
+      { optionId: "grant-session", kind: "allow_always" },
+      ...(hasOnce ? [{ optionId: "grant-this-call", kind: "allow_once" }] : []),
+      { optionId: "reject-this-call", kind: "reject_once" },
+    ]);
+    await create(GrokAgentDriver, "permission");
+    await instance.adapter.sendTurn({ threadId: "t-permission-scope", text: "go" });
+    const opened = await recorder.until((event) => event.type === "request.opened");
+    const outcome = await instance.adapter.respondToRequest("t-permission-scope", opened.requestId!, { behavior: "allow" });
+    expect(outcome).toBe(hasOnce ? "allowed-once" : "unavailable");
+    await recorder.until((event) => event.type === "turn.completed");
+    const response = JSON.parse(readFileSync(`${dump}.permission.json`, "utf8"));
+    expect(response.outcome).toEqual(hasOnce
+      ? { outcome: "selected", optionId: "grant-this-call" }
+      : { outcome: "cancelled" });
+    expect(recorder.events.find((event) => event.type === "request.resolved"))
+      .toMatchObject({ behavior: hasOnce ? "allow" : "deny" });
   });
 
   it("surfaces a permission ask as request.opened and completes once allowed", async () => {
