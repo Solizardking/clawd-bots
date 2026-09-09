@@ -1,6 +1,8 @@
 # Clawd website
 
-Live preview: https://clawd-desktop-site-8bit.fly.dev
+Public site: https://clawdbot.party  
+Mobile: https://clawdbot.party/mobile  
+Fly origin (not the advertised host): https://clawd-desktop-site-8bit.fly.dev
 
 Dedicated Convex project: `jeff-spicoli:clawd-desktop`.
 

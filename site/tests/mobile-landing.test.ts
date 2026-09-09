@@ -2,7 +2,7 @@ import {readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {expect,it} from 'vitest';
 import {ANDROID_CERT_SHA256,ANDROID_PACKAGE,androidAssetLinks} from '../lib/android-association';
-import {mobileLanding,MOBILE_PUBLIC_PATHS} from '../lib/mobile-landing';
+import {mobileLanding,MOBILE_PUBLIC_PATHS,PUBLIC_SITE_ORIGIN} from '../lib/mobile-landing';
 const root=fileURLToPath(new URL('..',import.meta.url));
 
 it('publishes Digital Asset Links for com.clawdbot.mobile with the public release fingerprint only',()=>{
@@ -30,6 +30,7 @@ it('describes the Solana Mobile Android product, APK path, privacy, and Expo Go 
   expect(mobileLanding.expoGo).not.toMatch(/Expo Go can use/);
   expect(mobileLanding.privacyHref).toBe('/privacy');
   expect(mobileLanding.apkName).toBe('clawd-mobile-0.1.0-arm64.apk');
-  expect(MOBILE_PUBLIC_PATHS).toEqual(['https://x402.life/mobile','https://clawdcompute.us/mobile']);
+  expect(PUBLIC_SITE_ORIGIN).toBe('https://clawdbot.party');
+  expect(MOBILE_PUBLIC_PATHS).toEqual(['https://clawdbot.party/mobile']);
   expect(page).not.toMatch(/Expo Go can (load|use) (its )?native/i);
 });

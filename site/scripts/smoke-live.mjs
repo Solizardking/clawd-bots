@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
-const origin=process.argv[2]??'https://clawd-desktop-site-8bit.fly.dev';
+const origin=process.argv[2]??'https://clawdbot.party';
 const url=new URL(origin);
 if(url.protocol!=='https:'&&url.hostname!=='localhost')throw new Error('Use HTTPS');
 const cookies=new Map();

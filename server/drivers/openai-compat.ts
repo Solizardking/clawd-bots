@@ -27,12 +27,34 @@ const DRIVER_KIND = "openai-compat";
 // Default catalog — overwritten by /models when the endpoint answers.
 // Free-tier-friendly defaults so the picker is never empty.
 const DEFAULT_MODELS: ModelCatalog = {
-  default: "meta-llama/llama-3.3-70b-instruct",
+  default: "openrouter/auto",
   options: [
+    { id: "openrouter/auto", label: "OpenRouter Auto Router" },
+    { id: "nex-agi/nex-n2.5-mini:free", label: "Nex N2.5 Mini (free)" },
+    { id: "inclusionai/ling-3.0-flash-sante:free", label: "Ling 3.0 Flash Sante (free)" },
     { id: "meta-llama/llama-3.3-70b-instruct", label: "Llama 3.3 70B (OpenRouter)" },
     { id: "llama-3.3-70b-versatile", label: "Llama 3.3 70B (Groq)" },
   ],
 };
+
+const AUTO_ROUTER_MODEL = "openrouter/auto";
+const AUTO_COST_TIERS = new Set(["low", "medium", "high", "xhigh", "max"]);
+
+function autoRouterBody(model: string, messages: unknown, stream: boolean): Record<string, unknown> {
+  const body: Record<string, unknown> = { model, messages, stream };
+  if (model !== AUTO_ROUTER_MODEL) return body;
+  const cost = (process.env.OPENROUTER_AUTO_COST_TIER ?? process.env.SAND_OPENROUTER_AUTO_COST_TIER)?.trim().toLowerCase();
+  const allowed = (process.env.OPENROUTER_AUTO_ALLOWED_MODELS ?? process.env.SAND_OPENROUTER_AUTO_ALLOWED_MODELS)?.split(",").map((value) => value.trim()).filter(Boolean);
+  const excluded = (process.env.OPENROUTER_AUTO_EXCLUDED_MODELS ?? process.env.SAND_OPENROUTER_AUTO_EXCLUDED_MODELS)?.split(",").map((value) => value.trim()).filter(Boolean);
+  const sessionId = (process.env.OPENROUTER_SESSION_ID ?? process.env.SAND_OPENROUTER_SESSION_ID)?.trim();
+  const plugin: Record<string, unknown> = { id: "auto-router" };
+  if (cost && AUTO_COST_TIERS.has(cost)) plugin.cost_tier = cost;
+  if (allowed && allowed.length > 0) plugin.allowed_models = allowed;
+  if (excluded && excluded.length > 0) plugin.excluded_models = excluded;
+  if (sessionId) body.session_id = sessionId;
+  if (Object.keys(plugin).length > 1) body.plugins = [plugin];
+  return body;
+}
 
 export interface OpenAICompatConfig {
   /** Base URL, no trailing /v1 assumed — we append /chat/completions. */
@@ -138,7 +160,7 @@ export const OpenAICompatDriver: ProviderDriver<OpenAICompatConfig> = {
           authorization: `Bearer ${apiKey}`,
           "content-type": "application/json",
         },
-        body: JSON.stringify({ model, messages, stream: opts.stream }),
+        body: JSON.stringify(autoRouterBody(model, messages, opts.stream)),
         signal: opts.signal ?? AbortSignal.timeout(120_000),
       });
       if (!res.ok) {

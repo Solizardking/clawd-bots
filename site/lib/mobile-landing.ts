@@ -1,4 +1,5 @@
-export const MOBILE_PUBLIC_PATHS = ['https://x402.life/mobile', 'https://clawdcompute.us/mobile'] as const;
+export const PUBLIC_SITE_ORIGIN = 'https://clawdbot.party';
+export const MOBILE_PUBLIC_PATHS = [`${PUBLIC_SITE_ORIGIN}/mobile`] as const;
 
 export const mobileLanding = {
   brand: 'CLAWD',

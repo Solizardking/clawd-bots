@@ -10,7 +10,7 @@
 
 Run commands in this documentation from the `clawd/` repository root unless a guide says otherwise. Use the Node version in `.node-version` and `npm ci`; the pnpm files under `reconstruction/` are historical records.
 
-Current desktop and iOS captures: [screenshots](screenshots/README.md). Source publication remote: [github-readiness](github-readiness.md).
+Current desktop and iOS captures: [screenshots](screenshots/README.md). Source publication remote: [github-readiness](github-readiness.md). Public website: [https://clawdbot.party](https://clawdbot.party). Solana Mobile: [https://clawdbot.party/mobile](https://clawdbot.party/mobile).
 
 ## Setup and integrations
 

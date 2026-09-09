@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
 import {createSignInMessage} from '@solana/wallet-standard-util';
-const origin=process.argv[2]??'https://clawd-desktop-site-8bit.fly.dev';
+const origin=process.argv[2]??'https://clawdbot.party';
 assert.equal(new URL(origin).protocol,'https:');
 const cookies=new Map();
 async function request(path,body,headers={}){
